@@ -266,6 +266,127 @@ func (s *Server) getAgentInfo(ctx context.Context, device string) AgentInfo {
 	}
 }
 
+type PatchSessionsRequest struct {
+	Sessions []string `json:"sessions"`
+}
+
+func (s *Server) handlePatchSessions(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	var req PatchSessionsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.Sessions) == 0 {
+		writeError(w, http.StatusBadRequest, "sessions must not be empty")
+		return
+	}
+
+	for _, session := range req.Sessions {
+		if !deviceNameRE.MatchString(session) {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid session name %q", session))
+			return
+		}
+	}
+
+	sessionsJSON, _ := json.Marshal(req.Sessions)
+	if err := s.rdb.HSet(r.Context(), "device:"+device, "sessions", string(sessionsJSON)).Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": req.Sessions})
+}
+
+func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	session := r.URL.Query().Get("name")
+	if session == "" {
+		writeError(w, http.StatusBadRequest, "missing name parameter")
+		return
+	}
+	if !deviceNameRE.MatchString(session) {
+		writeError(w, http.StatusBadRequest, "invalid session name")
+		return
+	}
+
+	deviceKey := "device:" + device
+	sessionsJSON, err := s.rdb.HGet(r.Context(), deviceKey, "sessions").Result()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	var sessions []string
+	json.Unmarshal([]byte(sessionsJSON), &sessions)
+
+	found := false
+	for i, s := range sessions {
+		if s == session {
+			sessions = append(sessions[:i], sessions[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	if len(sessions) == 0 {
+		writeError(w, http.StatusBadRequest, "cannot remove the last session")
+		return
+	}
+
+	updated, _ := json.Marshal(sessions)
+	if err := s.rdb.HSet(r.Context(), deviceKey, "sessions", string(updated)).Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// Clean up inbox
+	s.rdb.Del(r.Context(), "inbox:"+device+":"+session)
+
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
+}
+
+func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+	ctx := r.Context()
+
+	// Get API key hash to delete reverse index
+	apiKeyHash, _ := s.rdb.HGet(ctx, "device:"+device, "api_key_hash").Result()
+
+	// Delete device hash
+	s.rdb.Del(ctx, "device:"+device)
+
+	// Delete API key index
+	if apiKeyHash != "" {
+		s.rdb.Del(ctx, "api_key:"+apiKeyHash)
+	}
+
+	// Delete all inboxes for this device
+	inboxKeys, _ := s.rdb.Keys(ctx, "inbox:"+device+":*").Result()
+	for _, k := range inboxKeys {
+		s.rdb.Del(ctx, k)
+	}
+
+	// Delete all task tracking sets and their tasks
+	trackingKeys, _ := s.rdb.Keys(ctx, "tasks:"+device+":*").Result()
+	for _, tk := range trackingKeys {
+		members, _ := s.rdb.SMembers(ctx, tk).Result()
+		for _, tid := range members {
+			s.rdb.Del(ctx, "task:"+tid)
+		}
+		s.rdb.Del(ctx, tk)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	fromDevice, _ := r.Context().Value(contextKeyDevice).(string)
 

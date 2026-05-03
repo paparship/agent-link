@@ -262,3 +262,235 @@ func TestListEmptySessions(t *testing.T) {
 		t.Errorf("expected empty sessions, got %v", lr.Agents[0].Sessions)
 	}
 }
+
+func TestPatchSessions(t *testing.T) {
+	ctx := context.Background()
+	apiKey := setupAgent(t, "patch-sess", []string{"main", "worker"}, time.Now())
+	defer cleanupAgent(t, "patch-sess")
+
+	doReq := func(sessions []string) (*http.Response, error) {
+		body, _ := json.Marshal(map[string][]string{"sessions": sessions})
+		req, _ := http.NewRequest("PATCH", ts.URL+"/agents/sessions", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return http.DefaultClient.Do(req)
+	}
+
+	t.Run("add session", func(t *testing.T) {
+		resp, err := doReq([]string{"main", "worker", "reviewer"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		sessionsJSON, _ := testRdb.HGet(ctx, "device:patch-sess", "sessions").Result()
+		var sessions []string
+		json.Unmarshal([]byte(sessionsJSON), &sessions)
+		if len(sessions) != 3 || sessions[2] != "reviewer" {
+			t.Errorf("expected 3 sessions ending with reviewer, got %v", sessions)
+		}
+	})
+
+	t.Run("remove session", func(t *testing.T) {
+		resp, err := doReq([]string{"main", "worker"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		sessionsJSON, _ := testRdb.HGet(ctx, "device:patch-sess", "sessions").Result()
+		var sessions []string
+		json.Unmarshal([]byte(sessionsJSON), &sessions)
+		if len(sessions) != 2 {
+			t.Errorf("expected 2 sessions, got %v", sessions)
+		}
+	})
+
+	t.Run("empty sessions", func(t *testing.T) {
+		resp, err := doReq([]string{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for empty sessions, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no auth", func(t *testing.T) {
+		body := `{"sessions":["main"]}`
+		resp, err := http.Post(ts.URL+"/agents/sessions", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestDeleteSession(t *testing.T) {
+	ctx := context.Background()
+	apiKey := setupAgent(t, "del-sess", []string{"main", "worker", "reviewer"}, time.Now())
+	defer cleanupAgent(t, "del-sess")
+
+	// Put something in the inbox to verify cleanup
+	inboxKey := "inbox:del-sess:reviewer"
+	testRdb.LPush(ctx, inboxKey, `{"id":"test"}`)
+
+	doReq := func(name string) (*http.Response, error) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/sessions?name="+name, nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return http.DefaultClient.Do(req)
+	}
+
+	t.Run("remove existing session", func(t *testing.T) {
+		resp, err := doReq("reviewer")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		// Verify session removed from list
+		sessionsJSON, _ := testRdb.HGet(ctx, "device:del-sess", "sessions").Result()
+		var sessions []string
+		json.Unmarshal([]byte(sessionsJSON), &sessions)
+		if len(sessions) != 2 {
+			t.Errorf("expected 2 sessions, got %v", sessions)
+		}
+
+		// Verify inbox cleaned up
+		exists, _ := testRdb.Exists(ctx, inboxKey).Result()
+		if exists != 0 {
+			t.Error("expected inbox to be deleted")
+		}
+	})
+
+	t.Run("remove non-existing session", func(t *testing.T) {
+		resp, err := doReq("nonexistent")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("remove last session", func(t *testing.T) {
+		resp, err := doReq("worker")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		resp, err = doReq("main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400 for removing last session, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/sessions", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("no auth", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/sessions?name=main", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
+		}
+	})
+}
+
+func TestDeleteDevice(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	apiKey := setupAgent(t, "del-dev", []string{"main", "worker"}, now)
+	h := sha256.Sum256([]byte(apiKey))
+	hashHex := hex.EncodeToString(h[:])
+
+	// Create inbox and task data to verify cleanup
+	testRdb.LPush(ctx, "inbox:del-dev:main", `{"id":"msg1"}`)
+	testRdb.LPush(ctx, "inbox:del-dev:worker", `{"id":"msg2"}`)
+	testRdb.HSet(ctx, "task:t-del-dev", "status", "issued", "assigned_to", "del-dev:worker")
+	testRdb.SAdd(ctx, "tasks:del-dev:worker", "t-del-dev")
+
+	t.Run("delete device", func(t *testing.T) {
+		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/device", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		// Verify device deleted
+		exists, _ := testRdb.Exists(ctx, "device:del-dev").Result()
+		if exists != 0 {
+			t.Error("expected device:del-dev to be deleted")
+		}
+
+		// Verify API key index deleted
+		exists, _ = testRdb.Exists(ctx, "api_key:"+hashHex).Result()
+		if exists != 0 {
+			t.Error("expected api_key index to be deleted")
+		}
+
+		// Verify inboxes deleted
+		exists, _ = testRdb.Exists(ctx, "inbox:del-dev:main", "inbox:del-dev:worker").Result()
+		if exists != 0 {
+			t.Error("expected inboxes to be deleted")
+		}
+
+		// Verify tasks and tracking sets deleted
+		exists, _ = testRdb.Exists(ctx, "task:t-del-dev").Result()
+		if exists != 0 {
+			t.Error("expected task to be deleted")
+		}
+		exists, _ = testRdb.Exists(ctx, "tasks:del-dev:worker").Result()
+		if exists != 0 {
+			t.Error("expected tracking set to be deleted")
+		}
+	})
+
+	t.Run("delete device no auth", func(t *testing.T) {
+		resp, _ := http.Post(ts.URL+"/agents/device", "application/json", nil)
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
+		}
+	})
+}
+

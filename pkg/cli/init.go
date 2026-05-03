@@ -97,12 +97,16 @@ func RunInit(opts *InitOptions) error {
 		return fmt.Errorf("cannot write credentials: %w", err)
 	}
 
-	// Write .agentlink.toml for each session
+	// Write .agentlink.toml and CLAUDE.md for each session
 	for _, session := range regResp.Sessions {
 		sessionDir := filepath.Join(absPath, session)
 		tomlPath := filepath.Join(sessionDir, ".agentlink.toml")
 		if err := writeSessionTOML(tomlPath, session, device); err != nil {
 			return fmt.Errorf("cannot write %s: %w", tomlPath, err)
+		}
+		claudePath := filepath.Join(sessionDir, "CLAUDE.md")
+		if err := os.WriteFile(claudePath, []byte(claudeMDContent(session)), 0600); err != nil {
+			return fmt.Errorf("cannot write %s: %w", claudePath, err)
 		}
 	}
 

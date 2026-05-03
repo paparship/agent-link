@@ -4,6 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/team/agentlink/pkg/cli"
@@ -28,6 +30,12 @@ func main() {
 		cmdPing()
 	case "list":
 		cmdList(os.Args[2:])
+	case "session":
+		cmdSession(os.Args[2:])
+	case "attach":
+		cmdAttach(os.Args[2:])
+	case "device":
+		cmdDevice(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -49,6 +57,9 @@ Usage:
   agentlink task resume <task_id> <guidance>
   agentlink task cancel <task_id>
   agentlink task status <task_id>
+  agentlink session add|remove <name>
+  agentlink attach <session>
+  agentlink device remove
 `)
 }
 
@@ -77,6 +88,32 @@ func cmdInit(args []string) {
 	}
 
 	if err := cli.RunInit(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Create background tmux sessions
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+
+	for _, session := range []string{"main", "worker"} {
+		exec.Command("tmux", "kill-session", "-t", session).Run()
+		dir := filepath.Join(absPath, session)
+		exec.Command("tmux", "new-session", "-d", "-s", session, "-c", dir, "claude", "--dangerously-skip-permissions").Run()
+	}
+
+	fmt.Println("✓ tmux sessions created: main, worker")
+	fmt.Println()
+	fmt.Println("Attaching to main session...")
+
+	attach := exec.Command("tmux", "attach", "-t", "main")
+	attach.Stdin = os.Stdin
+	attach.Stdout = os.Stdout
+	attach.Stderr = os.Stderr
+	if err := attach.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -199,6 +236,69 @@ func cmdTaskCancel(args []string) {
 	taskID := args[0]
 
 	if err := cli.RunTaskCancel(taskID); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdSession(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink session add|remove <name>")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "add":
+		cmdSessionAdd(args[1:])
+	case "remove":
+		cmdSessionRemove(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "unknown session subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func cmdSessionAdd(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink session add <name>")
+		os.Exit(1)
+	}
+	name := args[0]
+	if err := cli.RunSessionAdd(name); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdSessionRemove(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink session remove <name>")
+		os.Exit(1)
+	}
+	name := args[0]
+	if err := cli.RunSessionRemove(name); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdAttach(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink attach <session>")
+		os.Exit(1)
+	}
+	session := args[0]
+	if err := cli.RunAttach(session); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdDevice(args []string) {
+	if len(args) < 1 || args[0] != "remove" {
+		fmt.Fprintln(os.Stderr, "usage: agentlink device remove")
+		os.Exit(1)
+	}
+	if err := cli.RunDeviceRemove(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
