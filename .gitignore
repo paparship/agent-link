@@ -1,4 +1,4 @@
 .gopath/
-agentlink
-server
+/agentlink
+/server
 /tmp/
