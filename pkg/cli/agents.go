@@ -3,45 +3,20 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
 func RunPing() error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
+	resp, err := apiDo(cfg, creds, "POST", "/agents/heartbeat", nil)
 	if err != nil {
 		return err
 	}
-
-	url := cfg.Server + "/agents/heartbeat"
-	req, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	fmt.Println("✓ Heartbeat sent")
 	return nil
@@ -59,42 +34,21 @@ type agentListResponse struct {
 }
 
 func RunList(all bool) error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
-	if err != nil {
-		return err
-	}
-
-	url := cfg.Server + "/agents/list"
+	path := "/agents/list"
 	if all {
-		url += "?all=true"
+		path += "?all=true"
 	}
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := apiDo(cfg, creds, "GET", path, nil)
 	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
+		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
 
 	var list agentListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {

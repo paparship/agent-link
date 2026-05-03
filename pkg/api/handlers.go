@@ -816,13 +816,13 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 	inboxItem := Message{
 		ID:          id,
 		Type:        "task",
-		FromDevice:  taskData["issued_by"],
+		FromDevice:  "",
 		FromSession: "",
 		TaskID:      req.TaskID,
 		Content:     req.Content,
 		CreatedAt:   now,
 	}
-	// Extract from_device from issued_by (format: "device:session")
+	// issued_by format: "device:session"
 	issuedParts := strings.SplitN(taskData["issued_by"], ":", 2)
 	if len(issuedParts) == 2 {
 		inboxItem.FromDevice = issuedParts[0]

@@ -1,23 +1,15 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
 
 func RunSessionAdd(name string) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
@@ -32,7 +24,7 @@ func RunSessionAdd(name string) error {
 	}
 
 	// Fetch current sessions from server
-	currentSessions, err := fetchSessions(cfg.Server, creds.APIKey)
+	currentSessions, err := fetchSessions(cfg, creds)
 	if err != nil {
 		return err
 	}
@@ -47,7 +39,7 @@ func RunSessionAdd(name string) error {
 	updatedSessions := append(currentSessions, name)
 
 	// Call PATCH /agents/sessions
-	if err := patchSessions(cfg.Server, creds.APIKey, updatedSessions); err != nil {
+	if err := patchSessions(cfg, creds, updatedSessions); err != nil {
 		return err
 	}
 
@@ -79,18 +71,13 @@ func RunSessionAdd(name string) error {
 }
 
 func RunSessionRemove(name string) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
 	// Fetch current sessions from server
-	currentSessions, err := fetchSessions(cfg.Server, creds.APIKey)
+	currentSessions, err := fetchSessions(cfg, creds)
 	if err != nil {
 		return err
 	}
@@ -120,7 +107,7 @@ func RunSessionRemove(name string) error {
 	}
 
 	// Call PATCH /agents/sessions
-	if err := patchSessions(cfg.Server, creds.APIKey, updatedSessions); err != nil {
+	if err := patchSessions(cfg, creds, updatedSessions); err != nil {
 		return err
 	}
 
@@ -135,40 +122,17 @@ func RunSessionRemove(name string) error {
 }
 
 func RunDeviceRemove() error {
-	// Load config and credentials — they may not exist if already cleaned up,
-	// but we need them for the API call
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
 	// Call DELETE /agents/device
-	url := cfg.Server + "/agents/device"
-	req, err := http.NewRequest("DELETE", url, nil)
+	resp, err := apiDo(cfg, creds, "DELETE", "/agents/device", nil)
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct{ Error string `json:"error"` }
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	// Clean up local .agentlink directory
 	agentlinkDir := filepath.Join(os.Getenv("HOME"), ".agentlink")
@@ -248,28 +212,12 @@ func checkTmux() error {
 	return nil
 }
 
-func fetchSessions(server, apiKey string) ([]string, error) {
-	url := server + "/agents/list"
-	req, err := http.NewRequest("GET", url, nil)
+func fetchSessions(cfg *AgentConfig, creds *AgentCredentials) ([]string, error) {
+	resp, err := apiDo(cfg, creds, "GET", "/agents/list", nil)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("cannot connect to server %s: %w", server, err)
+		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct{ Error string `json:"error"` }
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
-	}
 
 	var list struct {
 		Agents []struct {
@@ -287,32 +235,13 @@ func fetchSessions(server, apiKey string) ([]string, error) {
 	return list.Agents[0].Sessions, nil
 }
 
-func patchSessions(server, apiKey string, sessions []string) error {
-	body := map[string][]string{"sessions": sessions}
-	data, _ := json.Marshal(body)
-
-	url := server + "/agents/sessions"
-	req, err := http.NewRequest("PATCH", url, bytes.NewReader(data))
+func patchSessions(cfg *AgentConfig, creds *AgentCredentials, sessions []string) error {
+	resp, err := apiDo(cfg, creds, "PATCH", "/agents/sessions", map[string][]string{
+		"sessions": sessions,
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct{ Error string `json:"error"` }
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
-
+	resp.Body.Close()
 	return nil
 }

@@ -1,21 +1,13 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
 func RunTaskSend(target, taskID, content string) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
@@ -29,85 +21,36 @@ func RunTaskSend(target, taskID, content string) error {
 		target = cfg.Device + ":" + target
 	}
 
-	body := map[string]string{
+	resp, err := apiDo(cfg, creds, "POST", "/tasks/send", map[string]string{
 		"to":           target,
 		"from_session": session,
 		"task_id":      taskID,
 		"content":      content,
-	}
-	data, _ := json.Marshal(body)
-
-	url := cfg.Server + "/tasks/send"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	fmt.Printf("✓ Task %s sent to %s\n", taskID, target)
 	return nil
 }
 
 func RunTaskResult(taskID, status, result string) error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
-	if err != nil {
-		return err
-	}
-
-	body := map[string]string{
+	resp, err := apiDo(cfg, creds, "POST", "/tasks/result", map[string]string{
 		"task_id": taskID,
 		"status":  status,
 		"result":  result,
-	}
-	data, _ := json.Marshal(body)
-
-	url := cfg.Server + "/tasks/result"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	verb := "completed"
 	if status == "suspended" {
@@ -118,134 +61,54 @@ func RunTaskResult(taskID, status, result string) error {
 }
 
 func RunTaskResume(taskID, content string) error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
-	if err != nil {
-		return err
-	}
-
-	body := map[string]string{
+	resp, err := apiDo(cfg, creds, "POST", "/tasks/resume", map[string]string{
 		"task_id": taskID,
 		"content": content,
-	}
-	data, _ := json.Marshal(body)
-
-	url := cfg.Server + "/tasks/resume"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	fmt.Printf("✓ Task %s resumed\n", taskID)
 	return nil
 }
 
 func RunTaskCancel(taskID string) error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
-	if err != nil {
-		return err
-	}
-
-	body := map[string]string{
+	resp, err := apiDo(cfg, creds, "POST", "/tasks/cancel", map[string]string{
 		"task_id": taskID,
-	}
-	data, _ := json.Marshal(body)
-
-	url := cfg.Server + "/tasks/cancel"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	fmt.Printf("✓ Task %s cancelled\n", taskID)
 	return nil
 }
 
 func RunTaskStatus(taskID string) error {
-	cfg, err := loadConfig()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
 
-	creds, err := loadCredentials()
+	path := fmt.Sprintf("/tasks/status?task_id=%s", taskID)
+	resp, err := apiDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
-	}
-
-	url := fmt.Sprintf("%s/tasks/status?task_id=%s", cfg.Server, taskID)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("Task %s not found", taskID)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
 
 	var result struct {
 		TaskID      string `json:"task_id"`

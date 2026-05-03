@@ -1,21 +1,13 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 )
 
 func RunSend(target, content string) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
@@ -29,49 +21,22 @@ func RunSend(target, content string) error {
 		target = cfg.Device + ":" + target
 	}
 
-	body := map[string]string{
+	resp, err := apiDo(cfg, creds, "POST", "/messages/send", map[string]string{
 		"to":           target,
 		"from_session": session,
 		"content":      content,
-	}
-	data, _ := json.Marshal(body)
-
-	url := cfg.Server + "/messages/send"
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	})
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
+	resp.Body.Close()
 
 	fmt.Println("✓ Message sent")
 	return nil
 }
 
 func RunPull(all bool) error {
-	cfg, err := loadConfig()
-	if err != nil {
-		return err
-	}
-
-	creds, err := loadCredentials()
+	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
@@ -86,29 +51,12 @@ func RunPull(all bool) error {
 		limit = 10
 	}
 
-	url := fmt.Sprintf("%s/inbox/pull?session=%s&limit=%d", cfg.Server, session, limit)
-	req, err := http.NewRequest("GET", url, nil)
+	path := fmt.Sprintf("/inbox/pull?session=%s&limit=%d", session, limit)
+	resp, err := apiDo(cfg, creds, "GET", path, nil)
 	if err != nil {
-		return fmt.Errorf("cannot create request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
+		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		var errResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
-		}
-		return fmt.Errorf("server returned %d", resp.StatusCode)
-	}
 
 	var result struct {
 		Items []struct {

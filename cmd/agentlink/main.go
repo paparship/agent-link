@@ -26,6 +26,8 @@ func main() {
 		cmdPull(os.Args[2:])
 	case "task":
 		cmdTask(os.Args[2:])
+	case "poll":
+		cmdPoll(os.Args[2:])
 	case "ping":
 		cmdPing()
 	case "list":
@@ -52,6 +54,7 @@ Usage:
   agentlink pull [--all]
   agentlink ping
   agentlink list [--all]
+  agentlink poll
   agentlink task send <target> <task_id> <content>
   agentlink task result <task_id> <status> <result>
   agentlink task resume <task_id> <guidance>
@@ -101,11 +104,14 @@ func cmdInit(args []string) {
 
 	for _, session := range []string{"main", "worker"} {
 		exec.Command("tmux", "kill-session", "-t", session).Run()
+		exec.Command("tmux", "kill-session", "-t", session+"-poller").Run()
 		dir := filepath.Join(absPath, session)
 		exec.Command("tmux", "new-session", "-d", "-s", session, "-c", dir, "claude", "--dangerously-skip-permissions").Run()
+		exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, "agentlink", "poll").Run()
 	}
 
 	fmt.Println("✓ tmux sessions created: main, worker")
+	fmt.Println("✓ poller sessions created: main-poller, worker-poller")
 	fmt.Println()
 	fmt.Println("Attaching to main session...")
 
@@ -139,6 +145,13 @@ func cmdPull(args []string) {
 	fs.Parse(args)
 
 	if err := cli.RunPull(*all); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdPoll(args []string) {
+	if err := cli.RunPoll(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
