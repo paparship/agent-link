@@ -1,87 +1,85 @@
 # agentlink
 
-跨设备 CLI 消息系统，用于多 Agent Claude Code 协作。
+Cross-device CLI messaging for multi-agent Claude Code teams.
 
-## 部署 Server
+## Deploy the Server
 
-依赖 Redis，通过环境变量配置：
+Requires Redis. Configure via environment variables:
 
 ```bash
 export REDIS_ADDR=localhost:6379
-export REGISTER_PASSWORD=<设置注册密码>
+export REGISTER_PASSWORD=<your-password>
 export LISTEN_ADDR=:8080
 
 ./server
 ```
 
-### 注册流程
+### Registration Flow
 
-1. 部署 server
-2. 用 `init` 命令注册设备（需提供 server URL 和注册密码）
-3. Server 自动分配 API key，设备上线
+1. Start the server
+2. Run `init` from any machine to register (needs server URL + password)
+3. Server issues an API key — the device is now online
 
-## CLI 使用
+## CLI Usage
 
-### 初始化
+### Initialize a Team
 
 ```bash
 agentlink init --server http://<server>:8080 --password <password> [./path]
 ```
 
-- 创建 `main/` 和 `worker/` 目录，各含 `.agentlink.toml` + `CLAUDE.md`
-- 自动启动两个 tmux session（`main`、`worker`）运行 Claude Code
-- 每个 session 附带一个后台 poller 进程（`main-poller`、`worker-poller`）
+Creates `main/` and `worker/` directories, each with `.agentlink.toml` + `CLAUDE.md`. Starts two tmux sessions (`main` and `worker`) running Claude Code, plus a background poller process for each.
 
-### 消息
+### Messages
 
 ```bash
-agentlink send <target> <content>        # 发送消息
-agentlink pull [--all]                    # 拉取收件箱
+agentlink send <target> <content>        # send
+agentlink pull [--all]                    # receive
 ```
 
-### 任务
+### Tasks
 
 ```bash
-agentlink task send <target> <id> "<content>"    # 发放任务
-agentlink task result <id> <status> "<result>"    # 回报结果
-agentlink task resume <id> "<guidance>"           # 恢复挂起
-agentlink task cancel <id>                        # 取消任务
-agentlink task status <id>                        # 查看状态
+agentlink task send <target> <id> "<content>"    # assign
+agentlink task result <id> <status> "<result>"    # report
+agentlink task resume <id> "<guidance>"           # resume
+agentlink task cancel <id>                        # cancel
+agentlink task status <id>                        # check
 ```
 
-### 其他
+### Device & Sessions
 
 ```bash
-agentlink ping                    # 心跳（标记在线）
-agentlink list [--all]            # 查看设备状态
-agentlink session add|remove <n>  # 管理 session
-agentlink attach <session>        # 进入 session
-agentlink device remove           # 注销设备
-agentlink poll                    # 后台轮询收件箱（前台运行）
+agentlink ping                    # heartbeat (mark online)
+agentlink list [--all]            # list devices
+agentlink session add|remove <n>  # manage sessions
+agentlink attach <session>        # enter a session
+agentlink device remove           # unregister
+agentlink poll                    # run poller in foreground
 ```
 
-### 自动轮询
+### Auto-Polling
 
-`init` 启动后，每个 session 的 poller 自动运行：
+Each session has a background poller started by `init`:
 
-- 每 5 秒拉取收件箱
-- 检测 Claude 空闲时自动注入新消息
-- Claude 忙时（生成中 / 用户输入中）跳过
-- pane 捕获失败时静默跳过
+- Polls inbox every 5 seconds
+- Injects new messages automatically when Claude is idle
+- Skips when Claude is busy (generating / user is typing)
+- Silently skips when pane capture fails
 
-## 架构
+## Architecture
 
 ```
-┌───────────┐     ┌──────────────┐     ┌─────────┐
-│  CLI 客户端 │────▶│  Go API Server │────▶│  Redis  │
-└───────────┘     └──────────────┘     └─────────┘
-                        │
-                   ┌────┴────┐
-                   │  tmux   │ (capture-pane / send-keys)
-                   └─────────┘
+┌─────────┐     ┌──────────────┐     ┌────────┐
+│  CLI    │────▶│  API Server  │────▶│  Redis │
+└─────────┘     └──────────────┘     └────────┘
+                     │
+               ┌────┴────┐
+               │  tmux   │
+               └─────────┘
 ```
 
-- **Server**: Go net/http + Redis（消息队列、任务存储、设备注册）
-- **CLI**: 通过 HTTP API 收发消息，通过 tmux 与 Claude 交互
-- **Poller**: 后台轮询，检测 Claude 空闲后自动注入消息
-- **认证**: API key（SHA256 索引） + Bearer Token
+- **Server**: Go net/http + Redis (message queue, task storage, device registry)
+- **CLI**: HTTP API for messaging, tmux for Claude interaction
+- **Poller**: Background loop that checks for new messages and injects them when Claude is idle
+- **Auth**: API key (SHA256 index) + Bearer Token
