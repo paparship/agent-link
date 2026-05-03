@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 
 func cleanupTestData() {
 	ctx := context.Background()
-	for _, pattern := range []string{"device:*", "api_key:*", "inbox:*"} {
+	for _, pattern := range []string{"device:*", "api_key:*", "inbox:*", "task:*", "tasks:*"} {
 		keys, _ := testRdb.Keys(ctx, pattern).Result()
 		if len(keys) > 0 {
 			testRdb.Del(ctx, keys...)
