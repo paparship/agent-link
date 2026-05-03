@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    ports:
+      - "443:8080"
+    environment:
+      - REDIS_ADDR=redis:6379
+      - REGISTER_PASSWORD=dev-password
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --appendfsync everysec
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

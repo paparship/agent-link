@@ -1,0 +1,265 @@
+package cli
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCheckPrereqs(t *testing.T) {
+	t.Run("both available in PATH", func(t *testing.T) {
+		err := checkPrereqs()
+		if err != nil {
+			t.Logf("prereqs check: %v (may be expected in some environments)", err)
+		}
+	})
+
+	t.Run("empty PATH", func(t *testing.T) {
+		t.Setenv("PATH", "")
+		err := checkPrereqs()
+		if err == nil {
+			t.Fatal("expected error with empty PATH")
+		}
+		if !strings.Contains(err.Error(), "to be installed") {
+			t.Errorf("error should mention to be installed, got: %s", err)
+		}
+	})
+
+	t.Run("partial PATH with tmux only", func(t *testing.T) {
+		// Find where tmux is and only expose that directory
+		tmuxPath, err := exec.LookPath("tmux")
+		if err != nil {
+			t.Skip("tmux not found in PATH, can't test")
+		}
+		tmuxDir := filepath.Dir(tmuxPath)
+		t.Setenv("PATH", tmuxDir)
+		err = checkPrereqs()
+		if err == nil {
+			t.Fatal("expected error when claude is missing")
+		}
+		if !strings.Contains(err.Error(), "claude") {
+			t.Errorf("error should mention claude, got: %s", err)
+		}
+		if strings.Contains(err.Error(), "tmux") {
+			t.Errorf("error should not mention tmux when it's available, got: %s", err)
+		}
+	})
+}
+
+func TestWriteConfigTOML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+
+	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, `server = "http://server:8080"`) {
+		t.Errorf("missing server, got: %s", content)
+	}
+	if !strings.Contains(content, `device = "my-device"`) {
+		t.Errorf("missing device, got: %s", content)
+	}
+	if !strings.Contains(content, `base_dir = "/tmp/agent_team"`) {
+		t.Errorf("missing base_dir, got: %s", content)
+	}
+}
+
+func TestWriteSessionTOML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".agentlink.toml")
+
+	err := writeSessionTOML(path, "worker", "my-device")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, `session = "worker"`) {
+		t.Errorf("missing session, got: %s", content)
+	}
+	if !strings.Contains(content, `device = "my-device"`) {
+		t.Errorf("missing device, got: %s", content)
+	}
+}
+
+func TestWriteSessionTOMLFileMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".agentlink.toml")
+
+	writeSessionTOML(path, "main", "dev")
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("expected 0600, got %o", info.Mode().Perm())
+	}
+}
+
+func TestRunInitE2E(t *testing.T) {
+	// Mock register API
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/agents/register" {
+			t.Errorf("expected /agents/register, got %s", r.URL.Path)
+		}
+
+		var req registerRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+
+		if req.Device != "test-device" {
+			t.Errorf("request device: expected %q, got %q", "test-device", req.Device)
+		}
+		if len(req.Sessions) != 2 || req.Sessions[0] != "main" || req.Sessions[1] != "worker" {
+			t.Errorf("request sessions: expected [main worker], got %v", req.Sessions)
+		}
+		if req.RegisterPassword != "test-pw" {
+			t.Errorf("request password: expected %q, got %q", "test-pw", req.RegisterPassword)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(registerResponse{
+			APIKey:       "sk_live_" + strings.Repeat("a", 64),
+			Device:       "test-device",
+			Sessions:     []string{"main", "worker"},
+			RegisteredAt: "2026-05-03T12:00:00Z",
+		})
+	}))
+	defer mockSrv.Close()
+
+	// Isolated home directory
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	workDir := filepath.Join(homeDir, "my-team")
+
+	opts := &InitOptions{
+		Server:   mockSrv.URL,
+		Password: "test-pw",
+		Device:   "test-device",
+		Path:     workDir,
+	}
+
+	if err := RunInit(opts); err != nil {
+		t.Fatal(err)
+	}
+
+	// === Verify directory structure ===
+	for _, sub := range []string{"main", "worker"} {
+		info, err := os.Stat(filepath.Join(workDir, sub))
+		if err != nil {
+			t.Errorf("missing directory %s: %v", sub, err)
+		} else if !info.IsDir() {
+			t.Errorf("%s is not a directory", sub)
+		}
+	}
+
+	// === Verify config.toml ===
+	configPath := filepath.Join(homeDir, ".agentlink", "config.toml")
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configContent := string(configData)
+	if !strings.Contains(configContent, `server = "`+mockSrv.URL+`"`) {
+		t.Errorf("config.toml missing server, got:\n%s", configContent)
+	}
+	if !strings.Contains(configContent, `device = "test-device"`) {
+		t.Errorf("config.toml missing device, got:\n%s", configContent)
+	}
+	if !strings.Contains(configContent, `base_dir = "`+workDir+`"`) {
+		t.Errorf("config.toml missing base_dir %q, got:\n%s", workDir, configContent)
+	}
+
+	// === Verify credentials.json ===
+	credPath := filepath.Join(homeDir, ".agentlink", "credentials.json")
+	credData, err := os.ReadFile(credPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var creds map[string]string
+	if err := json.Unmarshal(credData, &creds); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(creds["api_key"], "sk_live_") {
+		t.Errorf("api_key should start with sk_live_, got %q", creds["api_key"])
+	}
+	if len(creds["api_key"]) != len("sk_live_")+64 {
+		t.Errorf("api_key length: expected %d, got %d", len("sk_live_")+64, len(creds["api_key"]))
+	}
+	if creds["registered_at"] != "2026-05-03T12:00:00Z" {
+		t.Errorf("registered_at: expected %q, got %q", "2026-05-03T12:00:00Z", creds["registered_at"])
+	}
+
+	// === Verify main/.agentlink.toml ===
+	mainToml := filepath.Join(workDir, "main", ".agentlink.toml")
+	mainData, err := os.ReadFile(mainToml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainData), `session = "main"`) {
+		t.Errorf("main/.agentlink.toml missing session=main, got:\n%s", mainData)
+	}
+	if !strings.Contains(string(mainData), `device = "test-device"`) {
+		t.Errorf("main/.agentlink.toml missing device=test-device, got:\n%s", mainData)
+	}
+
+	// === Verify worker/.agentlink.toml ===
+	workerToml := filepath.Join(workDir, "worker", ".agentlink.toml")
+	workerData, err := os.ReadFile(workerToml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(workerData), `session = "worker"`) {
+		t.Errorf("worker/.agentlink.toml missing session=worker, got:\n%s", workerData)
+	}
+	if !strings.Contains(string(workerData), `device = "test-device"`) {
+		t.Errorf("worker/.agentlink.toml missing device=test-device, got:\n%s", workerData)
+	}
+}
+
+func TestRunInitE2E_existingDir(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	workDir := filepath.Join(homeDir, "already-there")
+	os.MkdirAll(workDir, 0755)
+
+	opts := &InitOptions{
+		Server:   "http://localhost:1",
+		Password: "test-pw",
+		Device:   "test-device",
+		Path:     workDir,
+	}
+
+	err := RunInit(opts)
+	if err == nil {
+		t.Fatal("expected error for existing directory")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' error, got: %s", err)
+	}
+}
