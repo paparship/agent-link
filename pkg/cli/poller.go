@@ -9,42 +9,19 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
+
+	"github.com/team/agentlink/pkg/adapter"
 )
 
-// IsClaudeIdle checks if Claude is ready for input by examining tmux pane content.
-//
-// Returns true when all of the following hold:
-//   - "esc to interrupt" is absent (Claude is not generating)
-//   - the last line containing "❯" has nothing (or only whitespace) after it
-//     (the input box is empty)
-//
-// Returns false when no "❯" is found at all (Claude likely not ready).
-func IsClaudeIdle(pane string) bool {
-	if strings.Contains(pane, "esc to interrupt") {
-		return false
-	}
-
-	lines := strings.Split(pane, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		pos := strings.LastIndex(lines[i], "❯")
-		if pos < 0 {
-			continue
-		}
-		// Found a line containing ❯. If nothing (or only whitespace)
-		// follows the last ❯ on that line, the prompt is empty.
-		rest := strings.TrimSpace(lines[i][pos+len("❯"):])
-		return rest == ""
-	}
-	return false
-}
-
-// Poller polls the inbox and injects messages into Claude via tmux.
+// Poller polls the inbox and injects messages into the agent via tmux.
 type Poller struct {
 	Session string
 	Server  string
 	APIKey  string
+
+	// IdleDetector checks whether the agent pane is ready for input.
+	IdleDetector adapter.IdleDetector
 
 	// Polling interval. Default 5s.
 	Interval time.Duration
@@ -80,7 +57,7 @@ func (p *Poller) Run() error {
 			p.waitForIdle()
 
 			pane, err := p.capturePane(p.Session)
-			if err == nil && IsClaudeIdle(pane) {
+			if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
 				fmt.Fprintf(p.Stdout, "inject: %s\n", msg.Content)
 				if err := p.sendKeys(p.Session, msg.Content); err != nil {
 					fmt.Fprintf(p.Stdout, "send-keys error: %s\n", err)
@@ -146,7 +123,7 @@ func (p *Poller) waitForIdle() {
 			return
 		}
 		pane, err := p.capturePane(p.Session)
-		if err == nil && IsClaudeIdle(pane) {
+		if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
 			return
 		}
 		select {
@@ -225,6 +202,7 @@ func RunPoll() error {
 		APIKey:   creds.APIKey,
 		Interval: 5 * time.Second,
 		Stdout:   os.Stdout,
+		IdleDetector: adapter.NewDetector(cfg.Agent),
 	}
 	return p.Run()
 }

@@ -12,6 +12,7 @@ type AgentConfig struct {
 	Server  string
 	Device  string
 	BaseDir string
+	Agent   string
 }
 
 type AgentCredentials struct {
@@ -29,9 +30,13 @@ func loadConfig() (*AgentConfig, error) {
 		Server:  readTOML(string(data), "server"),
 		Device:  readTOML(string(data), "device"),
 		BaseDir: readTOML(string(data), "base_dir"),
+		Agent:   readTOML(string(data), "agent"),
 	}
 	if cfg.Server == "" || cfg.Device == "" {
 		return nil, fmt.Errorf("invalid config file at %s: missing server or device", path)
+	}
+	if cfg.Agent == "" {
+		cfg.Agent = "claude"
 	}
 	return cfg, nil
 }

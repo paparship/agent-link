@@ -13,97 +13,14 @@ import (
 	"time"
 )
 
-// ---------------------------------------------------------------------------
-// Layer 1 — pure function: IsClaudeIdle
-//
-// Test data is based on real tmux capture-pane output observed from
-// Claude Code v2.1.119 running with --dangerously-skip-permissions.
-//
-// Idle (bare prompt):
-//   ────────────────────────────────────────────────────────────────────────────────
-//   ❯
-//   ────────────────────────────────────────────────────────────────────────────────
-//     ⏵⏵ bypass permissions on (shift+tab to cycle)                ◈ max · /effort
-//
-// Typing (text after prompt):
-//   ────────────────────────────────────────────────────────────────────────────────
-//   ❯ some typed message
-//   ────────────────────────────────────────────────────────────────────────────────
-//     ⏵⏵ bypass permissions on (shift+tab to cycle)                ◈ max · /effort
-//
-// Busy (generating / running a tool):
-//   ────────────────────────────────────────────────────────────────────────────────
-//   ❯
-//   ────────────────────────────────────────────────────────────────────────────────
-//     ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ctrl+t to hide tasks
-// ---------------------------------------------------------------------------
-
-func TestIsClaudeIdle(t *testing.T) {
-	sep := "────────────────────────────────────────────────────────────────────────────────"
-	statusIdle := "  ⏵⏵ bypass permissions on (shift+tab to cycle)                ◈ max · /effort"
-	statusBusy := "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ctrl+t to hide tasks"
-
-	tests := []struct {
-		name string
-		pane string
-		want bool
-	}{
-		{
-			name: "empty pane",
-			pane: "",
-			want: false, // no ❯ found → not ready
-		},
-		{
-			name: "only newlines",
-			pane: "\n\n\n\n",
-			want: false,
-		},
-		{
-			name: "busy — esc to interrupt in status bar",
-			pane: sep + "\n❯\n" + sep + "\n" + statusBusy + "\n",
-			want: false,
-		},
-		{
-			name: "busy — esc to interrupt anywhere",
-			pane: "some output\nesc to interrupt\nmore output\n",
-			want: false,
-		},
-		{
-			name: "idle — bare prompt",
-			pane: sep + "\n❯\n" + sep + "\n" + statusIdle + "\n",
-			want: true,
-		},
-		{
-			name: "idle — prompt with trailing whitespace",
-			pane: sep + "\n❯ \n" + sep + "\n" + statusIdle + "\n",
-			want: true,
-		},
-		{
-			name: "typing — text after prompt",
-			pane: sep + "\n❯ some typed message\n" + sep + "\n" + statusIdle + "\n",
-			want: false,
-		},
-		{
-			name: "typing — short command",
-			pane: sep + "\n❯ agentlink pull\n" + sep + "\n" + statusIdle + "\n",
-			want: false,
-		},
-		{
-			name: "claude output — no prompt visible",
-			pane: "Here is some code:\nfunc foo() {\n  return 1\n}\n",
-			want: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsClaudeIdle(tt.pane)
-			if got != tt.want {
-				t.Errorf("IsClaudeIdle() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+// mockIdleDetector implements adapter.IdleDetector for testing.
+type mockIdleDetector struct {
+	busy        bool
+	promptEmpty bool
 }
+
+func (m *mockIdleDetector) IsBusy(_ string) bool        { return m.busy }
+func (m *mockIdleDetector) IsPromptEmpty(_ string) bool { return m.promptEmpty }
 
 // ---------------------------------------------------------------------------
 // Layer 2 — Poller logic with mocked deps
@@ -133,6 +50,7 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 		Interval: 10 * time.Millisecond,
 		Ctx:      ctx,
 		Stdout:   io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			captureCalls++
 			if captureCalls >= 3 {
@@ -154,8 +72,6 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 }
 
 func TestPoller_skipsWhenBusy(t *testing.T) {
-	busyStatus := "  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ctrl+t to hide tasks"
-
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(pollerPullResponse{
@@ -176,9 +92,9 @@ func TestPoller_skipsWhenBusy(t *testing.T) {
 		Interval: 10 * time.Millisecond,
 		Ctx:      ctx,
 		Stdout:   io.Discard,
+		IdleDetector: &mockIdleDetector{busy: true},
 		capturePane: func(string) (string, error) {
-			// Always busy — status bar has "esc to interrupt"
-			return busyStatus + "\n", nil
+			return "❯", nil
 		},
 		sendKeys: func(_ string, text string) error {
 			injectCalls++
@@ -220,6 +136,7 @@ func TestPoller_skipsWhenCapturerFails(t *testing.T) {
 		Interval: 10 * time.Millisecond,
 		Ctx:      ctx,
 		Stdout:   io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			return "", io.ErrUnexpectedEOF // capture failed
 		},
@@ -258,6 +175,7 @@ func TestPoller_skipsWhenInboxEmpty(t *testing.T) {
 		Interval: 10 * time.Millisecond,
 		Ctx:      ctx,
 		Stdout:   io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			return "❯\n", nil
 		},
@@ -301,7 +219,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude")
 
 		err := RunPoll()
 		if err == nil {
@@ -316,7 +234,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude")
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
@@ -330,4 +248,3 @@ func TestRunPoll_errors(t *testing.T) {
 		}
 	})
 }
-

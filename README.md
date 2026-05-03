@@ -1,6 +1,6 @@
 # agentlink
 
-Cross-device CLI messaging for multi-agent Claude Code teams.
+Cross-device CLI messaging for multi-agent teams. Currently ships with Claude Code support.
 
 ## Deploy the Server
 
@@ -28,7 +28,7 @@ export LISTEN_ADDR=:8080
 agentlink init --server http://<server>:8080 --password <password> [./path]
 ```
 
-Creates `main/` and `worker/` directories, each with `.agentlink.toml` + `CLAUDE.md`. Starts two tmux sessions (`main` and `worker`) running Claude Code, plus a background poller process for each.
+Creates `main/` and `worker/` directories, each with `.agentlink.toml` + `CLAUDE.md`. Starts two tmux sessions (`main` and `worker`) running the configured agent (Claude Code by default), plus a background poller process for each.
 
 ### Messages
 
@@ -63,8 +63,8 @@ agentlink poll                    # run poller in foreground
 Each session has a background poller started by `init`:
 
 - Polls inbox every 5 seconds
-- Injects new messages automatically when Claude is idle
-- Skips when Claude is busy (generating / user is typing)
+- Injects new messages automatically when the agent is idle
+- Skips when the agent is busy (generating / user is typing)
 - Silently skips when pane capture fails
 
 ## Architecture
@@ -80,6 +80,6 @@ Each session has a background poller started by `init`:
 ```
 
 - **Server**: Go net/http + Redis (message queue, task storage, device registry)
-- **CLI**: HTTP API for messaging, tmux for Claude interaction
-- **Poller**: Background loop that checks for new messages and injects them when Claude is idle
+- **CLI**: HTTP API for messaging, tmux for agent interaction
+- **Poller**: Background loop that checks for new messages and injects them when the agent is idle
 - **Auth**: API key (SHA256 index) + Bearer Token

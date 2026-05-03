@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/team/agentlink/pkg/adapter"
 )
 
 func RunSessionAdd(name string) error {
@@ -56,7 +58,8 @@ func RunSessionAdd(name string) error {
 
 	// Write CLAUDE.md
 	claudePath := filepath.Join(sessionDir, "CLAUDE.md")
-	claudeContent := claudeMDContent(name)
+	launcher := adapter.NewLauncher(cfg.Agent)
+	claudeContent := launcher.InitTemplate(name)
 	if err := os.WriteFile(claudePath, []byte(claudeContent), 0600); err != nil {
 		return fmt.Errorf("cannot write %s: %w", claudePath, err)
 	}
@@ -172,35 +175,14 @@ func RunAttach(session string) error {
 		return cmd.Run()
 	}
 
-	cmd := exec.Command("tmux", "new-session", "-c", sessionDir, "claude", "--dangerously-skip-permissions")
+	launcher := adapter.NewLauncher(cfg.Agent)
+	name, args := launcher.Command()
+	cmdArgs := append([]string{"new-session", "-c", sessionDir, name}, args...)
+	cmd := exec.Command("tmux", cmdArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
-}
-
-func claudeMDContent(session string) string {
-	bt := "`"
-
-	switch session {
-	case "main":
-		return "# main session\n\n## 通信\n\n" +
-			"- " + bt + `agentlink task send <target> <task_id> "<content>"` + bt + " — 发放任务\n" +
-			"- " + bt + `agentlink task resume <task_id> "<guidance>"` + bt + " — 恢复挂起任务\n" +
-			"- " + bt + "agentlink task cancel <task_id>" + bt + " — 取消任务\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取回报\n" +
-			"- " + bt + "agentlink list --all" + bt + " — 查看所有设备状态\n"
-	case "worker":
-		return "# worker session\n\n## 通信\n\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取任务或消息\n" +
-			"- " + bt + `agentlink task result <task_id> completed "<result>"` + bt + " — 回报完成\n" +
-			"- " + bt + `agentlink task result <task_id> suspended "<reason>"` + bt + " — 回报挂起\n" +
-			"- " + bt + `agentlink send <target> "<content>"` + bt + " — 发送消息\n"
-	default:
-		return "# " + session + " session\n\n## 通信\n\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取任务或消息\n" +
-			"- " + bt + `agentlink send <target> "<content>"` + bt + " — 发送消息\n"
-	}
 }
 
 // -- helpers --

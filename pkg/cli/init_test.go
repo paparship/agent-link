@@ -9,11 +9,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/team/agentlink/pkg/adapter"
 )
 
 func TestCheckPrereqs(t *testing.T) {
+	l := adapter.NewLauncher("claude")
+
 	t.Run("both available in PATH", func(t *testing.T) {
-		err := checkPrereqs()
+		err := l.CheckPrereqs()
 		if err != nil {
 			t.Logf("prereqs check: %v (may be expected in some environments)", err)
 		}
@@ -21,7 +25,7 @@ func TestCheckPrereqs(t *testing.T) {
 
 	t.Run("empty PATH", func(t *testing.T) {
 		t.Setenv("PATH", "")
-		err := checkPrereqs()
+		err := l.CheckPrereqs()
 		if err == nil {
 			t.Fatal("expected error with empty PATH")
 		}
@@ -38,7 +42,7 @@ func TestCheckPrereqs(t *testing.T) {
 		}
 		tmuxDir := filepath.Dir(tmuxPath)
 		t.Setenv("PATH", tmuxDir)
-		err = checkPrereqs()
+		err = l.CheckPrereqs()
 		if err == nil {
 			t.Fatal("expected error when claude is missing")
 		}
@@ -55,7 +59,7 @@ func TestWriteConfigTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team")
+	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team", "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +78,9 @@ func TestWriteConfigTOML(t *testing.T) {
 	}
 	if !strings.Contains(content, `base_dir = "/tmp/agent_team"`) {
 		t.Errorf("missing base_dir, got: %s", content)
+	}
+	if !strings.Contains(content, `agent = "claude"`) {
+		t.Errorf("missing agent, got: %s", content)
 	}
 }
 

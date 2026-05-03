@@ -7,9 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/team/agentlink/pkg/adapter"
 )
 
 type InitOptions struct {
@@ -17,6 +18,7 @@ type InitOptions struct {
 	Password string
 	Device   string
 	Path     string
+	Agent    string
 }
 
 type registerRequest struct {
@@ -33,6 +35,10 @@ type registerResponse struct {
 }
 
 func RunInit(opts *InitOptions) error {
+	if opts.Agent == "" {
+		opts.Agent = "claude"
+	}
+
 	// Resolve device name
 	device := opts.Device
 	if device == "" {
@@ -44,7 +50,11 @@ func RunInit(opts *InitOptions) error {
 	}
 
 	// Pre-check prerequisites
-	if err := checkPrereqs(); err != nil {
+	launcher := adapter.NewLauncher(opts.Agent)
+	if launcher == nil {
+		return fmt.Errorf("unknown agent type %q", opts.Agent)
+	}
+	if err := launcher.CheckPrereqs(); err != nil {
 		return err
 	}
 
@@ -76,7 +86,7 @@ func RunInit(opts *InitOptions) error {
 
 	// Write config.toml
 	configPath := filepath.Join(agentlinkDir, "config.toml")
-	if err := writeConfigTOML(configPath, opts.Server, device, absPath); err != nil {
+	if err := writeConfigTOML(configPath, opts.Server, device, absPath, opts.Agent); err != nil {
 		return fmt.Errorf("cannot write config: %w", err)
 	}
 
@@ -105,7 +115,7 @@ func RunInit(opts *InitOptions) error {
 			return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 		}
 		claudePath := filepath.Join(sessionDir, "CLAUDE.md")
-		if err := os.WriteFile(claudePath, []byte(claudeMDContent(session)), 0600); err != nil {
+		if err := os.WriteFile(claudePath, []byte(launcher.InitTemplate(session)), 0600); err != nil {
 			return fmt.Errorf("cannot write %s: %w", claudePath, err)
 		}
 	}
@@ -120,25 +130,12 @@ func RunInit(opts *InitOptions) error {
 	return nil
 }
 
-func checkPrereqs() error {
-	var missing []string
-	for _, cmd := range []string{"tmux", "claude"} {
-		if _, err := exec.LookPath(cmd); err != nil {
-			missing = append(missing, cmd)
-		}
-	}
-	if len(missing) > 0 {
-		msg := "require " + strings.Join(missing, " and ") + " to be installed"
-		return fmt.Errorf("%s", msg)
-	}
-	return nil
-}
-
-func writeConfigTOML(path, server, device, baseDir string) error {
+func writeConfigTOML(path, server, device, baseDir, agent string) error {
 	content := fmt.Sprintf(`server = %q
 device = %q
 base_dir = %q
-`, server, device, baseDir)
+agent = %q
+`, server, device, baseDir, agent)
 	return os.WriteFile(path, []byte(content), 0600)
 }
 

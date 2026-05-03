@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/team/agentlink/pkg/adapter"
 	"github.com/team/agentlink/pkg/cli"
 )
 
@@ -71,6 +72,7 @@ func cmdInit(args []string) {
 	server := fs.String("server", "", "API server URL")
 	password := fs.String("password", "", "Registration password")
 	device := fs.String("device", "", "Device name (default: hostname)")
+	agent := fs.String("agent", "claude", "Agent type (default: claude)")
 	fs.Parse(args)
 
 	if *server == "" || *password == "" {
@@ -88,6 +90,7 @@ func cmdInit(args []string) {
 		Password: *password,
 		Device:   *device,
 		Path:     path,
+		Agent:    *agent,
 	}
 
 	if err := cli.RunInit(opts); err != nil {
@@ -102,11 +105,14 @@ func cmdInit(args []string) {
 		os.Exit(1)
 	}
 
+	launcher := adapter.NewLauncher(*agent)
 	for _, session := range []string{"main", "worker"} {
 		exec.Command("tmux", "kill-session", "-t", session).Run()
 		exec.Command("tmux", "kill-session", "-t", session+"-poller").Run()
 		dir := filepath.Join(absPath, session)
-		exec.Command("tmux", "new-session", "-d", "-s", session, "-c", dir, "claude", "--dangerously-skip-permissions").Run()
+		name, args := launcher.Command()
+		cmdArgs := append([]string{"new-session", "-d", "-s", session, "-c", dir, name}, args...)
+		exec.Command("tmux", cmdArgs...).Run()
 		exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, "agentlink", "poll").Run()
 	}
 

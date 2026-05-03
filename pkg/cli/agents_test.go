@@ -224,7 +224,7 @@ func TestRunPingList_errors(t *testing.T) {
 		os.MkdirAll(fmt.Sprintf("%s/.agentlink", homeDir), 0755)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		defer srv.Close()
-		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir)
+		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude")
 
 		err := RunPing()
 		if err == nil {
@@ -241,7 +241,7 @@ func TestRunPingList_errors(t *testing.T) {
 		os.MkdirAll(fmt.Sprintf("%s/.agentlink", homeDir), 0755)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		defer srv.Close()
-		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir)
+		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude")
 
 		err := RunList(false)
 		if err == nil {
