@@ -98,7 +98,7 @@ func RunSessionRemove(name string) error {
 	}
 
 	if len(currentSessions) <= 1 {
-		return fmt.Errorf("cannot remove the last session; use 'agentlink device remove' instead")
+		return fmt.Errorf("cannot remove the last session; use 'agentlink uninstall' instead")
 	}
 
 	// Remove from list
@@ -124,11 +124,14 @@ func RunSessionRemove(name string) error {
 	return nil
 }
 
-func RunDeviceRemove() error {
+func RunUninstall() error {
 	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
 	}
+
+	// Kill tmux sessions (best-effort)
+	killSessionSessions(cfg.BaseDir)
 
 	// Call DELETE /agents/device
 	resp, err := apiDo(cfg, creds, "DELETE", "/agents/device", nil)
@@ -137,6 +140,13 @@ func RunDeviceRemove() error {
 	}
 	resp.Body.Close()
 
+	// Delete work directory
+	if cfg.BaseDir != "" {
+		if err := os.RemoveAll(cfg.BaseDir); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not remove %s: %v\n", cfg.BaseDir, err)
+		}
+	}
+
 	// Clean up local .agentlink directory
 	agentlinkDir := filepath.Join(os.Getenv("HOME"), ".agentlink")
 	if err := os.RemoveAll(agentlinkDir); err != nil {
@@ -144,7 +154,28 @@ func RunDeviceRemove() error {
 	}
 
 	fmt.Println("✓ Device unregistered")
+	fmt.Println("  To remove agentlink from PATH, edit ~/.bashrc or ~/.zshrc")
 	return nil
+}
+
+// killSessionSessions kills tmux sessions for each subdirectory in baseDir.
+// Best-effort; errors are silently ignored.
+func killSessionSessions(baseDir string) {
+	if baseDir == "" {
+		return
+	}
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		exec.Command("tmux", "kill-session", "-t", name).Run()
+		exec.Command("tmux", "kill-session", "-t", name+"-poller").Run()
+	}
 }
 
 func RunAttach(session string) error {

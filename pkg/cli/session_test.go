@@ -174,8 +174,8 @@ func TestRunSessionRemove(t *testing.T) {
 	})
 }
 
-func TestRunDeviceRemove(t *testing.T) {
-	t.Run("device remove success", func(t *testing.T) {
+func TestRunUninstall(t *testing.T) {
+	t.Run("uninstall success", func(t *testing.T) {
 		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != "DELETE" || r.URL.Path != "/agents/device" {
 				t.Errorf("expected DELETE /agents/device, got %s %s", r.Method, r.URL.Path)
@@ -195,7 +195,7 @@ func TestRunDeviceRemove(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		if err := RunDeviceRemove(); err != nil {
+		if err := RunUninstall(); err != nil {
 			t.Fatal(err)
 		}
 
@@ -205,7 +205,7 @@ func TestRunDeviceRemove(t *testing.T) {
 		}
 	})
 
-	t.Run("device remove server error", func(t *testing.T) {
+	t.Run("uninstall server error", func(t *testing.T) {
 		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "server error"})
@@ -222,7 +222,7 @@ func TestRunDeviceRemove(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		err := RunDeviceRemove()
+		err := RunUninstall()
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -233,11 +233,11 @@ func TestRunDeviceRemove(t *testing.T) {
 		}
 	})
 
-	t.Run("device remove missing config", func(t *testing.T) {
+	t.Run("uninstall missing config", func(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunDeviceRemove()
+		err := RunUninstall()
 		if err == nil {
 			t.Fatal("expected error")
 		}

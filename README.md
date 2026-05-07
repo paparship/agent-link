@@ -2,6 +2,24 @@
 
 Cross-device CLI messaging for multi-agent teams. Currently ships with Claude Code support.
 
+## Build from Source
+
+```bash
+make build              # build agentlink CLI
+make build-server       # build server
+make install            # build + install to /usr/local/bin
+make uninstall          # remove from /usr/local/bin
+make reinstall          # uninstall → build → install
+make test               # run all tests
+make clean              # remove build artifacts
+```
+
+Set `BINDIR` to override the install path:
+
+```bash
+make install BINDIR=~/.local/bin
+```
+
 ## Deploy the Server
 
 Requires Redis. Configure via environment variables:
@@ -54,7 +72,7 @@ agentlink ping                    # heartbeat (mark online)
 agentlink list [--all]            # list devices
 agentlink session add|remove <n>  # manage sessions
 agentlink attach <session>        # enter a session
-agentlink device remove           # unregister
+agentlink uninstall                # unregister device + clean up
 agentlink poll                    # run poller in foreground
 ```
 

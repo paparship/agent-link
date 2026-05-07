@@ -37,8 +37,8 @@ func main() {
 		cmdSession(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
-	case "device":
-		cmdDevice(os.Args[2:])
+	case "uninstall":
+		cmdUninstall()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -63,7 +63,7 @@ Usage:
   agentlink task status <task_id>
   agentlink session add|remove <name>
   agentlink attach <session>
-  agentlink device remove
+  agentlink uninstall
 `)
 }
 
@@ -105,6 +105,7 @@ func cmdInit(args []string) {
 		os.Exit(1)
 	}
 
+selfExe, _ := os.Executable()
 	launcher := adapter.NewLauncher(*agent)
 	for _, session := range []string{"main", "worker"} {
 		exec.Command("tmux", "kill-session", "-t", session).Run()
@@ -113,7 +114,7 @@ func cmdInit(args []string) {
 		name, args := launcher.Command()
 		cmdArgs := append([]string{"new-session", "-d", "-s", session, "-c", dir, name}, args...)
 		exec.Command("tmux", cmdArgs...).Run()
-		exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, "agentlink", "poll").Run()
+		exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, selfExe, "poll").Run()
 	}
 
 	fmt.Println("✓ tmux sessions created: main, worker")
@@ -312,12 +313,8 @@ func cmdAttach(args []string) {
 	}
 }
 
-func cmdDevice(args []string) {
-	if len(args) < 1 || args[0] != "remove" {
-		fmt.Fprintln(os.Stderr, "usage: agentlink device remove")
-		os.Exit(1)
-	}
-	if err := cli.RunDeviceRemove(); err != nil {
+func cmdUninstall() {
+	if err := cli.RunUninstall(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

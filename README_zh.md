@@ -2,6 +2,24 @@
 
 跨设备 CLI 消息系统，用于多 Agent 协作。当前适配了 Claude Code。
 
+## 编译
+
+```bash
+make build              # 编译 agentlink CLI
+make build-server       # 编译 server
+make install            # 编译 + 安装到 /usr/local/bin
+make uninstall          # 从 /usr/local/bin 移除
+make reinstall          # 卸载 → 编译 → 安装
+make test               # 运行全部测试
+make clean              # 删除编译产物
+```
+
+通过 `BINDIR` 自定义安装路径：
+
+```bash
+make install BINDIR=~/.local/bin
+```
+
 ## 部署服务端
 
 依赖 Redis，通过环境变量配置：
@@ -54,7 +72,7 @@ agentlink ping                    # 心跳（标记在线）
 agentlink list [--all]            # 查看设备
 agentlink session add|remove <n>  # 管理 session
 agentlink attach <session>        # 进入 session
-agentlink device remove           # 注销设备
+agentlink uninstall                # 注销设备 + 清理本地文件
 agentlink poll                    # 运行轮询（前台）
 ```
 
