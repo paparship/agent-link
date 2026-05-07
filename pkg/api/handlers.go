@@ -150,7 +150,8 @@ type SendRequest struct {
 }
 
 type SendResponse struct {
-	ID string `json:"id"`
+	ID     string `json:"id"`
+	TaskID string `json:"task_id,omitempty"`
 }
 
 type PullResponse struct {
@@ -160,7 +161,7 @@ type PullResponse struct {
 type SendTaskRequest struct {
 	To          string `json:"to"`
 	FromSession string `json:"from_session"`
-	TaskID      string `json:"task_id"`
+	TaskID      string `json:"task_id,omitempty"`
 	Content     string `json:"content"`
 }
 
@@ -180,7 +181,7 @@ type TaskCancelRequest struct {
 }
 
 type TaskStatusResponse struct {
-	TaskID      string `json:"task_id"`
+	TaskID      string `json:"task_id,omitempty"`
 	Status      string `json:"status"`
 	AssignedTo  string `json:"assigned_to"`
 	IssuedBy    string `json:"issued_by"`
@@ -552,10 +553,6 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing field: from_session")
 		return
 	}
-	if req.TaskID == "" {
-		writeError(w, http.StatusBadRequest, "missing field: task_id")
-		return
-	}
 	if req.Content == "" {
 		writeError(w, http.StatusBadRequest, "missing field: content")
 		return
@@ -564,7 +561,9 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "content exceeds 3000 characters")
 		return
 	}
-	if !deviceNameRE.MatchString(req.TaskID) {
+	if req.TaskID == "" {
+		req.TaskID = generateID()[:8]
+	} else if !deviceNameRE.MatchString(req.TaskID) {
 		writeError(w, http.StatusBadRequest, "invalid task_id: 2-32 chars, lowercase letters/digits/hyphens/underscores, start with a letter")
 		return
 	}
@@ -690,7 +689,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, SendResponse{ID: id})
+	writeJSON(w, http.StatusOK, SendResponse{ID: id, TaskID: req.TaskID})
 }
 
 func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
@@ -757,10 +756,6 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.TaskID == "" {
-		writeError(w, http.StatusBadRequest, "missing field: task_id")
-		return
-	}
 	if req.Content == "" {
 		writeError(w, http.StatusBadRequest, "missing field: content")
 		return
@@ -915,6 +910,48 @@ func (s *Server) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		CompletedAt: data["completed_at"],
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		writeError(w, http.StatusBadRequest, "missing session parameter")
+		return
+	}
+	if !deviceNameRE.MatchString(session) {
+		writeError(w, http.StatusBadRequest, "invalid session name")
+		return
+	}
+
+	trackingKey := "tasks:" + device + ":" + session
+	members, err := s.rdb.SMembers(r.Context(), trackingKey).Result()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	tasks := make([]TaskStatusResponse, 0)
+	for _, tid := range members {
+		taskKey := "task:" + tid
+		data, err := s.rdb.HGetAll(r.Context(), taskKey).Result()
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		tasks = append(tasks, TaskStatusResponse{
+			TaskID:      data["task_id"],
+			Status:      data["status"],
+			AssignedTo:  data["assigned_to"],
+			IssuedBy:    data["issued_by"],
+			Content:     data["content"],
+			Result:      data["result"],
+			IssuedAt:    data["issued_at"],
+			CompletedAt: data["completed_at"],
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
 }
 
 func generateID() string {

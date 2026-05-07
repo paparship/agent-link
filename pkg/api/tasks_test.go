@@ -216,7 +216,7 @@ func TestTasks(t *testing.T) {
 		}{
 			{"missing to", `{"from_session":"main","task_id":"x","content":"x"}`},
 			{"missing from_session", `{"to":"task-test:worker","task_id":"x","content":"x"}`},
-			{"missing task_id", `{"to":"task-test:worker","from_session":"main","content":"x"}`},
+			{"invalid task_id format", `{"to":"task-test:worker","from_session":"main","task_id":"UPPERCASE","content":"x"}`},
 			{"missing content", `{"to":"task-test:worker","from_session":"main","task_id":"x"}`},
 		}
 		for _, tc := range tests {
@@ -902,4 +902,62 @@ func TestTasks(t *testing.T) {
 
 		testRdb.Del(ctx, "task:t-life-3")
 	})
+
+	t.Run("task list", func(t *testing.T) {
+		cleanInbox()
+		defer testRdb.Del(ctx, "tasks:task-test:worker")
+
+		// Create a couple of tasks
+		testRdb.HSet(ctx, "task:t-list-1",
+			"task_id", "t-list-1",
+			"status", "issued",
+			"assigned_to", "task-test:worker",
+			"issued_by", "task-test:main",
+			"content", "first task",
+			"issued_at", "2026-01-01T00:00:00Z",
+		)
+		testRdb.Expire(ctx, "task:t-list-1", 7*24*3600)
+		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-list-1")
+		defer testRdb.Del(ctx, "task:t-list-1")
+
+		testRdb.HSet(ctx, "task:t-list-2",
+			"task_id", "t-list-2",
+			"status", "in_progress",
+			"assigned_to", "task-test:worker",
+			"issued_by", "task-test:main",
+			"content", "second task",
+			"issued_at", "2026-01-01T00:01:00Z",
+		)
+		testRdb.Expire(ctx, "task:t-list-2", 7*24*3600)
+		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-list-2")
+		defer testRdb.Del(ctx, "task:t-list-2")
+
+		resp, err := doReq("GET", "/tasks/list?session=worker", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+
+		var listResp struct {
+			Tasks []map[string]string `json:"tasks"`
+		}
+		json.NewDecoder(resp.Body).Decode(&listResp)
+
+		if len(listResp.Tasks) != 2 {
+			t.Fatalf("expected 2 tasks, got %d", len(listResp.Tasks))
+		}
+
+		// Verify task IDs
+		taskIDs := make(map[string]bool)
+		for _, t := range listResp.Tasks {
+			taskIDs[t["task_id"]] = true
+		}
+		if !taskIDs["t-list-1"] || !taskIDs["t-list-2"] {
+			t.Errorf("expected both tasks in list, got %v", taskIDs)
+		}
+	})
+
 }

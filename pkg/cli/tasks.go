@@ -30,7 +30,16 @@ func RunTaskSend(target, taskID, content string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+
+	var sendResp struct {
+		ID     string `json:"id"`
+		TaskID string `json:"task_id,omitempty"`
+	}
+	json.NewDecoder(resp.Body).Decode(&sendResp)
+	if sendResp.TaskID != "" {
+		taskID = sendResp.TaskID
+	}
 
 	fmt.Printf("✓ Task %s sent to %s\n", taskID, target)
 	return nil
@@ -94,6 +103,63 @@ func RunTaskCancel(taskID string) error {
 	resp.Body.Close()
 
 	fmt.Printf("✓ Task %s cancelled\n", taskID)
+	return nil
+}
+
+
+func RunTaskList() error {
+	cfg, creds, err := loadAuth()
+	if err != nil {
+		return err
+	}
+
+	session, err := findCurrentSession()
+	if err != nil {
+		return err
+	}
+
+	path := fmt.Sprintf("/tasks/list?session=%s", session)
+	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Tasks []struct {
+			TaskID      string `json:"task_id"`
+			Status      string `json:"status"`
+			AssignedTo  string `json:"assigned_to"`
+			IssuedBy    string `json:"issued_by"`
+			Content     string `json:"content"`
+			Result      string `json:"result"`
+			IssuedAt    string `json:"issued_at"`
+			CompletedAt string `json:"completed_at"`
+		} `json:"tasks"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if len(result.Tasks) == 0 {
+		fmt.Println("No active tasks")
+		return nil
+	}
+
+	for _, t := range result.Tasks {
+		fmt.Printf("Task:      %s\n", t.TaskID)
+		fmt.Printf("Status:    %s\n", t.Status)
+		fmt.Printf("Assigned:  %s\n", t.AssignedTo)
+		fmt.Printf("Issued by: %s\n", t.IssuedBy)
+		fmt.Printf("Content:   %s\n", t.Content)
+		if t.Result != "" {
+			fmt.Printf("Result:    %s\n", t.Result)
+		}
+		fmt.Printf("Issued:    %s\n", t.IssuedAt)
+		if t.CompletedAt != "" {
+			fmt.Printf("Completed: %s\n", t.CompletedAt)
+		}
+		fmt.Println("---")
+	}
+
 	return nil
 }
 

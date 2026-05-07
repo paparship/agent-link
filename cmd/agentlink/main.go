@@ -61,6 +61,7 @@ Usage:
   agentlink task resume <task_id> <guidance>
   agentlink task cancel <task_id>
   agentlink task status <task_id>
+  agentlink task list
   agentlink session add|remove <name>
   agentlink attach <session>
   agentlink uninstall
@@ -105,7 +106,7 @@ func cmdInit(args []string) {
 		os.Exit(1)
 	}
 
-selfExe, _ := os.Executable()
+	selfExe, _ := os.Executable()
 	launcher := adapter.NewLauncher(*agent)
 	for _, session := range []string{"main", "worker"} {
 		exec.Command("tmux", "kill-session", "-t", session).Run()
@@ -205,13 +206,23 @@ func cmdTask(args []string) {
 }
 
 func cmdTaskSend(args []string) {
-	if len(args) < 3 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink task send <target> <task_id> <content>")
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink task send <target> [<task_id>] <content>")
+		fmt.Fprintln(os.Stderr, "  with task_id: agentlink task send worker my-id \"do something\"")
+		fmt.Fprintln(os.Stderr, "  without:      agentlink task send worker \"do something\"")
 		os.Exit(1)
 	}
 	target := args[0]
-	taskID := args[1]
-	content := strings.Join(args[2:], " ")
+	var taskID string
+	var content string
+	if len(args) == 2 {
+		// 2-arg form: target + content, server generates task_id
+		content = args[1]
+	} else {
+		// 3+ arg form: target + task_id + content
+		taskID = args[1]
+		content = strings.Join(args[2:], " ")
+	}
 
 	if err := cli.RunTaskSend(target, taskID, content); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
@@ -315,6 +326,14 @@ func cmdAttach(args []string) {
 
 func cmdUninstall() {
 	if err := cli.RunUninstall(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+
+func cmdTaskList() {
+	if err := cli.RunTaskList(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

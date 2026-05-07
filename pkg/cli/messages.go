@@ -65,6 +65,7 @@ func RunPull(all bool) error {
 			FromSession string `json:"from_session"`
 			Content     string `json:"content"`
 			CreatedAt   string `json:"created_at"`
+			TaskID      string `json:"task_id,omitempty"`
 		} `json:"items"`
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
@@ -76,6 +77,9 @@ func RunPull(all bool) error {
 
 	for _, msg := range result.Items {
 		fmt.Printf("[%s] from %s:%s — %s\n", msg.Type, msg.FromDevice, msg.FromSession, msg.CreatedAt)
+		if msg.Type == "task" && msg.TaskID != "" {
+			fmt.Printf("  Task ID: %s\n", msg.TaskID)
+		}
 		fmt.Println(msg.Content)
 		fmt.Println("---")
 	}

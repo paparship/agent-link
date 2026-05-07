@@ -77,6 +77,7 @@ type pollerInboxItem struct {
 	Content     string `json:"content"`
 	FromDevice  string `json:"from_device"`
 	FromSession string `json:"from_session"`
+	TaskID      string `json:"task_id,omitempty"`
 }
 
 type pollerPullResponse struct {

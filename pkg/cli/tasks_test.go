@@ -463,3 +463,64 @@ func TestRunTaskStatus(t *testing.T) {
 		}
 	})
 }
+func TestRunTaskList(t *testing.T) {
+	t.Run("list with tasks", func(t *testing.T) {
+		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/tasks/list" {
+				t.Errorf("expected /tasks/list, got %s", r.URL.Path)
+			}
+			if r.URL.Query().Get("session") != "worker" {
+				t.Errorf("expected session=worker, got %s", r.URL.Query().Get("session"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"tasks": []map[string]string{
+					{"task_id": "t-1", "status": "issued", "assigned_to": "dev:worker", "issued_by": "dev:main", "content": "task one", "issued_at": "2026-01-01T00:00:00Z"},
+					{"task_id": "t-2", "status": "in_progress", "assigned_to": "dev:worker", "issued_by": "dev:main", "content": "task two", "issued_at": "2026-01-01T00:01:00Z"},
+				},
+			})
+		}))
+		defer mockSrv.Close()
+
+		sessionDir := setupTaskEnv(t, mockSrv.URL)
+		origWd, _ := os.Getwd()
+		os.Chdir(sessionDir)
+		defer os.Chdir(origWd)
+
+		if err := RunTaskList(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("list empty", func(t *testing.T) {
+		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"tasks": []any{}})
+		}))
+		defer mockSrv.Close()
+
+		sessionDir := setupTaskEnv(t, mockSrv.URL)
+		origWd, _ := os.Getwd()
+		os.Chdir(sessionDir)
+		defer os.Chdir(origWd)
+
+		if err := RunTaskList(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("list missing config", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		err := RunTaskList()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "config file not found") {
+			t.Errorf("expected config error, got: %s", err)
+		}
+	})
+}
+
+
