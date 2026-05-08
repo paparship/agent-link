@@ -74,6 +74,7 @@ func cmdInit(args []string) {
 	password := fs.String("password", "", "Registration password")
 	device := fs.String("device", "", "Device name (default: hostname)")
 	agent := fs.String("agent", "claude", "Agent type (default: claude)")
+	noPoll := fs.Bool("no-poll", false, "Disable auto-polling (default: false)")
 	fs.Parse(args)
 
 	if *server == "" || *password == "" {
@@ -115,11 +116,18 @@ func cmdInit(args []string) {
 		name, args := launcher.Command()
 		cmdArgs := append([]string{"new-session", "-d", "-s", session, "-c", dir, name}, args...)
 		exec.Command("tmux", cmdArgs...).Run()
+			if !*noPoll {
 		exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, selfExe, "poll").Run()
+			}
 	}
 
-	fmt.Println("✓ tmux sessions created: main, worker")
-	fmt.Println("✓ poller sessions created: main-poller, worker-poller")
+		if *noPoll {
+		fmt.Println("✓ tmux sessions created: main, worker")
+		fmt.Println("  Auto-polling disabled (use agentlink poll to start manually)")
+		} else {
+		fmt.Println("✓ tmux sessions created: main, worker")
+		fmt.Println("✓ poller sessions created: main-poller, worker-poller")
+		}
 	fmt.Println()
 	fmt.Println("Attaching to main session...")
 

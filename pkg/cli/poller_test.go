@@ -248,3 +248,30 @@ func TestRunPoll_errors(t *testing.T) {
 		}
 	})
 }
+func TestRunPoll_disabledByConfig(t *testing.T) {
+	t.Run("poll disabled returns nil", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		config := `server = "http://srv:8080"
+device = "dev"
+base_dir = "/tmp/agent_team"
+agent = "claude"
+
+[poll]
+enabled = false
+`
+		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
+
+		creds := map[string]string{"api_key": "sk_live_test"}
+		credData, _ := json.MarshalIndent(creds, "", "  ")
+		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
+
+		err := RunPoll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}

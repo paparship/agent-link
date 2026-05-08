@@ -192,16 +192,27 @@ func RunPoll() error {
 	if err != nil {
 		return err
 	}
+
+	if !cfg.Poll.Enabled {
+		fmt.Println("Auto-polling is disabled in config")
+		return nil
+	}
+
 	session, err := findCurrentSession()
 	if err != nil {
 		return err
+	}
+
+	interval := cfg.Poll.Interval
+	if interval <= 0 {
+		interval = 5
 	}
 
 	p := &Poller{
 		Session:  session,
 		Server:   cfg.Server,
 		APIKey:   creds.APIKey,
-		Interval: 5 * time.Second,
+		Interval: time.Duration(interval) * time.Second,
 		Stdout:   os.Stdout,
 		IdleDetector: adapter.NewDetector(cfg.Agent),
 	}

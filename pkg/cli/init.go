@@ -19,6 +19,7 @@ type InitOptions struct {
 	Device   string
 	Path     string
 	Agent    string
+	NoPoll   bool
 }
 
 type registerRequest struct {
@@ -118,6 +119,14 @@ func RunInit(opts *InitOptions) error {
 		if err := os.WriteFile(claudePath, []byte(launcher.InitTemplate(session)), 0600); err != nil {
 			return fmt.Errorf("cannot write %s: %w", claudePath, err)
 		}
+	}
+
+	// Update config with poll settings
+	if opts.NoPoll {
+		configPath := filepath.Join(agentlinkDir, "config.toml")
+		data, _ := os.ReadFile(configPath)
+		pollConfig := "\n[poll]\nenabled = false\ninterval = 5\n"
+		os.WriteFile(configPath, []byte(string(data)+pollConfig), 0600)
 	}
 
 	// Print success

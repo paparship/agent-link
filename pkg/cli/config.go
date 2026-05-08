@@ -5,14 +5,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
+
+type PollConfig struct {
+	Enabled  bool
+	Interval int
+}
 
 type AgentConfig struct {
 	Server  string
 	Device  string
 	BaseDir string
 	Agent   string
+	Poll    PollConfig
 }
 
 type AgentCredentials struct {
@@ -31,6 +38,10 @@ func loadConfig() (*AgentConfig, error) {
 		Device:  readTOML(string(data), "device"),
 		BaseDir: readTOML(string(data), "base_dir"),
 		Agent:   readTOML(string(data), "agent"),
+		Poll: PollConfig{
+			Enabled:  readTOMLBool(string(data), "poll.enabled", true),
+			Interval: readTOMLInt(string(data), "poll.interval", 5),
+		},
 	}
 	if cfg.Server == "" || cfg.Device == "" {
 		return nil, fmt.Errorf("invalid config file at %s: missing server or device", path)
@@ -84,9 +95,28 @@ func findCurrentSession() (string, error) {
 }
 
 func readTOML(content, key string) string {
-	prefix := key + " = "
+	// Handle section.key notation (e.g. "poll.enabled")
+	var section string
+	var lookupKey string
+	if idx := strings.Index(key, "."); idx >= 0 {
+		section = key[:idx]
+		lookupKey = key[idx+1:]
+	} else {
+		lookupKey = key
+	}
+
+	prefix := lookupKey + " = "
+	inSection := section == ""
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
+		// Track section headers
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			inSection = section != "" && strings.TrimSuffix(strings.TrimPrefix(line, "["), "]") == section
+			continue
+		}
+		if !inSection {
+			continue
+		}
 		if strings.HasPrefix(line, prefix) {
 			val := strings.TrimPrefix(line, prefix)
 			val = strings.Trim(val, `"`)
@@ -94,4 +124,24 @@ func readTOML(content, key string) string {
 		}
 	}
 	return ""
+}
+
+func readTOMLBool(content, key string, defaultVal bool) bool {
+	v := readTOML(content, key)
+	if v == "" {
+		return defaultVal
+	}
+	return v == "true"
+}
+
+func readTOMLInt(content, key string, defaultVal int) int {
+	v := readTOML(content, key)
+	if v == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultVal
+	}
+	return n
 }

@@ -270,3 +270,141 @@ func TestRunInitE2E_existingDir(t *testing.T) {
 		t.Errorf("expected 'already exists' error, got: %s", err)
 	}
 }
+func TestPollConfigParsing(t *testing.T) {
+	t.Run("poll enabled true", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		config := `server = "http://srv:8080"
+device = "dev"
+base_dir = "/tmp/agent_team"
+agent = "claude"
+
+[poll]
+enabled = true
+interval = 10
+`
+		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Poll.Enabled {
+			t.Error("expected Poll.Enabled=true")
+		}
+		if cfg.Poll.Interval != 10 {
+			t.Errorf("expected Poll.Interval=10, got %d", cfg.Poll.Interval)
+		}
+	})
+
+	t.Run("poll enabled false", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		config := `server = "http://srv:8080"
+device = "dev"
+base_dir = "/tmp/agent_team"
+agent = "claude"
+
+[poll]
+enabled = false
+interval = 5
+`
+		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Poll.Enabled {
+			t.Error("expected Poll.Enabled=false")
+		}
+	})
+
+	t.Run("poll section missing defaults to enabled", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://srv:8080", "dev", "/tmp/agent_team", "claude")
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !cfg.Poll.Enabled {
+			t.Error("expected Poll.Enabled=true by default")
+		}
+		if cfg.Poll.Interval != 5 {
+			t.Errorf("expected Poll.Interval=5 (default), got %d", cfg.Poll.Interval)
+		}
+	})
+
+	t.Run("poll interval from config", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		config := `server = "http://srv:8080"
+device = "dev"
+base_dir = "/tmp/agent_team"
+agent = "claude"
+
+[poll]
+enabled = true
+interval = 30
+`
+		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Poll.Interval != 30 {
+			t.Errorf("expected Poll.Interval=30, got %d", cfg.Poll.Interval)
+		}
+	})
+}
+
+func TestRunPoll_disabled(t *testing.T) {
+	t.Run("poll disabled exits clean", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		config := `server = "http://srv:8080"
+device = "dev"
+base_dir = "` + filepath.Join(homeDir, "agent_team") + `"
+agent = "claude"
+
+[poll]
+enabled = false
+`
+		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
+
+		creds := map[string]string{"api_key": "sk_live_test"}
+		credData, _ := json.MarshalIndent(creds, "", "  ")
+		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
+
+		sessionDir := filepath.Join(homeDir, "agent_team", "worker")
+		os.MkdirAll(sessionDir, 0755)
+		writeSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "dev")
+
+		origWd, _ := os.Getwd()
+		os.Chdir(sessionDir)
+		defer os.Chdir(origWd)
+
+		err := RunPoll()
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
