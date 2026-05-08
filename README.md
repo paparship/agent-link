@@ -2,6 +2,12 @@
 
 Cross-device CLI messaging for multi-agent teams. Currently ships with Claude Code support.
 
+## Quick Install (Linux / macOS)
+
+```bash
+curl -sfL https://github.com/paparship/agent-link/releases/latest/download/install.sh | sh
+```
+
 ## Build from Source
 
 ```bash

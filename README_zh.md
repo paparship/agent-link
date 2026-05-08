@@ -2,6 +2,12 @@
 
 跨设备 CLI 消息系统，用于多 Agent 协作。当前适配了 Claude Code。
 
+## 一键安装（Linux / macOS）
+
+```bash
+curl -sfL https://github.com/paparship/agent-link/releases/latest/download/install.sh | sh
+```
+
 ## 编译
 
 ```bash
