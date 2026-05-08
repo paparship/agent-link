@@ -756,6 +756,10 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TaskID == "" {
+		writeError(w, http.StatusBadRequest, "missing field: task_id")
+		return
+	}
 	if req.Content == "" {
 		writeError(w, http.StatusBadRequest, "missing field: content")
 		return

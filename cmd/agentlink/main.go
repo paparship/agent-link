@@ -122,11 +122,11 @@ func cmdInit(args []string) {
 	}
 
 		if *noPoll {
-		fmt.Println("✓ tmux sessions created: main, worker")
-		fmt.Println("  Auto-polling disabled (use agentlink poll to start manually)")
+			fmt.Println("✓ tmux sessions created: main, worker")
+			fmt.Println("  Auto-polling disabled (use agentlink poll to start manually)")
 		} else {
-		fmt.Println("✓ tmux sessions created: main, worker")
-		fmt.Println("✓ poller sessions created: main-poller, worker-poller")
+			fmt.Println("✓ tmux sessions created: main, worker")
+			fmt.Println("✓ poller sessions created: main-poller, worker-poller")
 		}
 	fmt.Println()
 	fmt.Println("Attaching to main session...")
@@ -338,7 +338,6 @@ func cmdUninstall() {
 		os.Exit(1)
 	}
 }
-
 
 func cmdTaskList() {
 	if err := cli.RunTaskList(); err != nil {
