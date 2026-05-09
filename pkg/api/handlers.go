@@ -87,7 +87,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check device already exists
-	exists, err := s.rdb.Exists(r.Context(), "device:"+req.Device).Result()
+	exists, err := s.rdb.Exists(r.Context(), "agentlink:device:"+req.Device).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -107,14 +107,14 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusInternalServerError, "internal error")
 				return
 			}
-			deviceKey := "device:" + req.Device
+			deviceKey := "agentlink:device:" + req.Device
 			oldHash, _ := s.rdb.HGet(r.Context(), deviceKey, "api_key_hash").Result()
 			if oldHash != "" {
-				s.rdb.Del(r.Context(), "api_key:"+oldHash)
+				s.rdb.Del(r.Context(), "agentlink:api_key:"+oldHash)
 			}
 			now := time.Now().UTC().Format(time.RFC3339)
 			s.rdb.HSet(r.Context(), deviceKey, "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
-			s.rdb.Set(r.Context(), "api_key:"+apiKeyHash, req.Device, 0)
+			s.rdb.Set(r.Context(), "agentlink:api_key:"+apiKeyHash, req.Device, 0)
 			writeJSON(w, http.StatusOK, RegisterResponse{
 				APIKey:       apiKey,
 				Device:       req.Device,
@@ -135,7 +135,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	// Store device data in a Hash
-	deviceKey := "device:" + req.Device
+	deviceKey := "agentlink:device:" + req.Device
 	sessionsJSON, _ := json.Marshal(req.Sessions)
 	if err := s.rdb.HSet(r.Context(), deviceKey,
 		"sessions", string(sessionsJSON),
@@ -148,7 +148,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reverse index for auth lookup
-	indexKey := "api_key:" + apiKeyHash
+	indexKey := "agentlink:api_key:" + apiKeyHash
 	if err := s.rdb.Set(r.Context(), indexKey, req.Device, 0).Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -235,7 +235,7 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	device, _ := r.Context().Value(contextKeyDevice).(string)
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := s.rdb.HSet(r.Context(), "device:"+device, "last_seen", now).Err(); err != nil {
+	if err := s.rdb.HSet(r.Context(), "agentlink:device:"+device, "last_seen", now).Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -250,13 +250,13 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 	var agents []AgentInfo
 
 	if all {
-		keys, err := s.rdb.Keys(r.Context(), "device:*").Result()
+		keys, err := s.rdb.Keys(r.Context(), "agentlink:device:*").Result()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		for _, key := range keys {
-			name := strings.TrimPrefix(key, "device:")
+			name := strings.TrimPrefix(key, "agentlink:device:")
 			agents = append(agents, s.getAgentInfo(r.Context(), name))
 		}
 	} else {
@@ -271,7 +271,7 @@ func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getAgentInfo(ctx context.Context, device string) AgentInfo {
-	data, err := s.rdb.HGetAll(ctx, "device:"+device).Result()
+	data, err := s.rdb.HGetAll(ctx, "agentlink:device:"+device).Result()
 	if err != nil || len(data) == 0 {
 		return AgentInfo{Device: device, Online: false}
 	}
@@ -322,7 +322,7 @@ func (s *Server) handlePatchSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionsJSON, _ := json.Marshal(req.Sessions)
-	if err := s.rdb.HSet(r.Context(), "device:"+device, "sessions", string(sessionsJSON)).Err(); err != nil {
+	if err := s.rdb.HSet(r.Context(), "agentlink:device:"+device, "sessions", string(sessionsJSON)).Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -343,7 +343,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deviceKey := "device:" + device
+	deviceKey := "agentlink:device:" + device
 	sessionsJSON, err := s.rdb.HGet(r.Context(), deviceKey, "sessions").Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -378,7 +378,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Clean up inbox
-	s.rdb.Del(r.Context(), "inbox:"+device+":"+session)
+	s.rdb.Del(r.Context(), "agentlink:inbox:"+device+":"+session)
 
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions})
 }
@@ -390,23 +390,23 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteDeviceData(ctx context.Context, device string) {
-	apiKeyHash, _ := s.rdb.HGet(ctx, "device:"+device, "api_key_hash").Result()
+	apiKeyHash, _ := s.rdb.HGet(ctx, "agentlink:device:"+device, "api_key_hash").Result()
 
-	s.rdb.Del(ctx, "device:"+device)
+	s.rdb.Del(ctx, "agentlink:device:"+device)
 	if apiKeyHash != "" {
-		s.rdb.Del(ctx, "api_key:"+apiKeyHash)
+		s.rdb.Del(ctx, "agentlink:api_key:"+apiKeyHash)
 	}
 
-	inboxKeys, _ := s.rdb.Keys(ctx, "inbox:"+device+":*").Result()
+	inboxKeys, _ := s.rdb.Keys(ctx, "agentlink:inbox:"+device+":*").Result()
 	for _, k := range inboxKeys {
 		s.rdb.Del(ctx, k)
 	}
 
-	trackingKeys, _ := s.rdb.Keys(ctx, "tasks:"+device+":*").Result()
+	trackingKeys, _ := s.rdb.Keys(ctx, "agentlink:tasks:"+device+":*").Result()
 	for _, tk := range trackingKeys {
 		members, _ := s.rdb.SMembers(ctx, tk).Result()
 		for _, tid := range members {
-			s.rdb.Del(ctx, "task:"+tid)
+			s.rdb.Del(ctx, "agentlink:task:"+tid)
 		}
 		s.rdb.Del(ctx, tk)
 	}
@@ -457,7 +457,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	exists, err := s.rdb.Exists(r.Context(), "device:"+targetDevice).Result()
+	exists, err := s.rdb.Exists(r.Context(), "agentlink:device:"+targetDevice).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -467,7 +467,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionsJSON, err := s.rdb.HGet(r.Context(), "device:"+targetDevice, "sessions").Result()
+	sessionsJSON, err := s.rdb.HGet(r.Context(), "agentlink:device:"+targetDevice, "sessions").Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -491,7 +491,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	msgJSON, _ := json.Marshal(msg)
 
-	inboxKey := "inbox:" + targetDevice + ":" + targetSession
+	inboxKey := "agentlink:inbox:" + targetDevice + ":" + targetSession
 	if err := s.rdb.LPush(r.Context(), inboxKey, msgJSON).Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -532,7 +532,7 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	inboxKey := "inbox:" + device + ":" + session
+	inboxKey := "agentlink:inbox:" + device + ":" + session
 	items := make([]Message, 0)
 
 	for i := 0; i < limit; i++ {
@@ -548,7 +548,7 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		json.Unmarshal([]byte(data), &msg)
 		// Auto-set task to in_progress on pull
 		if msg.Type == "task" && msg.TaskID != "" {
-			taskKey := "task:" + msg.TaskID
+			taskKey := "agentlink:task:" + msg.TaskID
 			currentStatus, _ := s.rdb.HGet(r.Context(), taskKey, "status").Result()
 			if currentStatus == "issued" {
 				s.rdb.HSet(r.Context(), taskKey, "status", "in_progress")
@@ -612,7 +612,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check target device exists
-	exists, err := s.rdb.Exists(r.Context(), "device:"+targetDevice).Result()
+	exists, err := s.rdb.Exists(r.Context(), "agentlink:device:"+targetDevice).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -623,7 +623,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check target session exists
-	sessionsJSON, err := s.rdb.HGet(r.Context(), "device:"+targetDevice, "sessions").Result()
+	sessionsJSON, err := s.rdb.HGet(r.Context(), "agentlink:device:"+targetDevice, "sessions").Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -636,7 +636,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check task_id uniqueness
-	taskKey := "task:" + req.TaskID
+	taskKey := "agentlink:task:" + req.TaskID
 	exists, err = s.rdb.Exists(r.Context(), taskKey).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -648,7 +648,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Busy check: iterate tasks:<device>:<session> set
-	trackingKey := "tasks:" + targetDevice + ":" + targetSession
+	trackingKey := "agentlink:tasks:" + targetDevice + ":" + targetSession
 	members, err := s.rdb.SMembers(r.Context(), trackingKey).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -657,7 +657,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	var inProgress bool
 	suspendedCount := 0
 	for _, tid := range members {
-		status, err := s.rdb.HGet(r.Context(), "task:"+tid, "status").Result()
+		status, err := s.rdb.HGet(r.Context(), "agentlink:task:"+tid, "status").Result()
 		if err != nil {
 			continue
 		}
@@ -707,7 +707,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   now,
 	}
 	msgJSON, _ := json.Marshal(inboxItem)
-	inboxKey := "inbox:" + targetDevice + ":" + targetSession
+	inboxKey := "agentlink:inbox:" + targetDevice + ":" + targetSession
 	if err := s.rdb.LPush(r.Context(), inboxKey, msgJSON).Err(); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -736,7 +736,7 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskKey := "task:" + req.TaskID
+	taskKey := "agentlink:task:" + req.TaskID
 	status, err := s.rdb.HGet(r.Context(), taskKey, "status").Result()
 	if err == redis.Nil {
 		writeError(w, http.StatusNotFound, "task not found")
@@ -766,7 +766,7 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		parts := strings.SplitN(assignedTo, ":", 2)
 		if len(parts) == 2 {
-			s.rdb.SRem(r.Context(), "tasks:"+parts[0]+":"+parts[1], req.TaskID)
+			s.rdb.SRem(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
 		}
 	}
 
@@ -793,7 +793,7 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskKey := "task:" + req.TaskID
+	taskKey := "agentlink:task:" + req.TaskID
 	status, err := s.rdb.HGet(r.Context(), taskKey, "status").Result()
 	if err == redis.Nil {
 		writeError(w, http.StatusNotFound, "task not found")
@@ -831,7 +831,7 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 	assignedTo := taskData["assigned_to"]
 	parts := strings.SplitN(assignedTo, ":", 2)
 	if len(parts) == 2 {
-		s.rdb.SAdd(r.Context(), "tasks:"+parts[0]+":"+parts[1], req.TaskID)
+		s.rdb.SAdd(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
 	}
 
 	// Re-push to target inbox
@@ -845,7 +845,7 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		Content:     req.Content,
 		CreatedAt:   now,
 	}
-	// issued_by format: "device:session"
+	// issued_by format: "agentlink:device:session"
 	issuedParts := strings.SplitN(taskData["issued_by"], ":", 2)
 	if len(issuedParts) == 2 {
 		inboxItem.FromDevice = issuedParts[0]
@@ -854,7 +854,7 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 
 	msgJSON, _ := json.Marshal(inboxItem)
 	if len(parts) == 2 {
-		inboxKey := "inbox:" + parts[0] + ":" + parts[1]
+		inboxKey := "agentlink:inbox:" + parts[0] + ":" + parts[1]
 		s.rdb.LPush(r.Context(), inboxKey, msgJSON)
 	}
 
@@ -873,7 +873,7 @@ func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskKey := "task:" + req.TaskID
+	taskKey := "agentlink:task:" + req.TaskID
 	status, err := s.rdb.HGet(r.Context(), taskKey, "status").Result()
 	if err == redis.Nil {
 		writeError(w, http.StatusNotFound, "task not found")
@@ -902,7 +902,7 @@ func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		parts := strings.SplitN(assignedTo, ":", 2)
 		if len(parts) == 2 {
-			s.rdb.SRem(r.Context(), "tasks:"+parts[0]+":"+parts[1], req.TaskID)
+			s.rdb.SRem(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
 		}
 	}
 
@@ -916,7 +916,7 @@ func (s *Server) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	taskKey := "task:" + taskID
+	taskKey := "agentlink:task:" + taskID
 	data, err := s.rdb.HGetAll(r.Context(), taskKey).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -953,7 +953,7 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trackingKey := "tasks:" + device + ":" + session
+	trackingKey := "agentlink:tasks:" + device + ":" + session
 	members, err := s.rdb.SMembers(r.Context(), trackingKey).Result()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -962,7 +962,7 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 
 	tasks := make([]TaskStatusResponse, 0)
 	for _, tid := range members {
-		taskKey := "task:" + tid
+		taskKey := "agentlink:task:" + tid
 		data, err := s.rdb.HGetAll(r.Context(), taskKey).Result()
 		if err != nil || len(data) == 0 {
 			continue
@@ -1043,7 +1043,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		h := sha256.Sum256([]byte(apiKey))
 		hashHex := hex.EncodeToString(h[:])
-		device, err := s.rdb.Get(r.Context(), "api_key:"+hashHex).Result()
+		device, err := s.rdb.Get(r.Context(), "agentlink:api_key:"+hashHex).Result()
 		if err == redis.Nil {
 			writeError(w, http.StatusUnauthorized, "unauthorized")
 			return

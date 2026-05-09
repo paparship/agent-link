@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 
 func cleanupTestData() {
 	ctx := context.Background()
-	for _, pattern := range []string{"device:*", "api_key:*", "inbox:*", "task:*", "tasks:*"} {
+	for _, pattern := range []string{"agentlink:device:*", "agentlink:api_key:*", "agentlink:inbox:*", "agentlink:task:*", "agentlink:tasks:*"} {
 		keys, _ := testRdb.Keys(ctx, pattern).Result()
 		if len(keys) > 0 {
 			testRdb.Del(ctx, keys...)
@@ -103,20 +103,20 @@ func TestRegister(t *testing.T) {
 		}
 
 		// Verify Redis hash
-		exists, _ := testRdb.Exists(context.Background(), "device:reg-test").Result()
+		exists, _ := testRdb.Exists(context.Background(), "agentlink:device:reg-test").Result()
 		if exists != 1 {
-			t.Error("device:reg-test should exist in Redis")
+			t.Error("agentlink:device:reg-test should exist in Redis")
 		}
 
 		// Verify API key hash matches
-		storedHash, _ := testRdb.HGet(context.Background(), "device:reg-test", "api_key_hash").Result()
+		storedHash, _ := testRdb.HGet(context.Background(), "agentlink:device:reg-test", "api_key_hash").Result()
 		computedHash := sha256.Sum256([]byte(rr.APIKey))
 		if storedHash != hex.EncodeToString(computedHash[:]) {
 			t.Error("stored api_key_hash does not match computed hash")
 		}
 
 		// Verify reverse index
-		revDevice, _ := testRdb.Get(context.Background(), "api_key:"+storedHash).Result()
+		revDevice, _ := testRdb.Get(context.Background(), "agentlink:api_key:"+storedHash).Result()
 		if revDevice != "reg-test" {
 			t.Errorf("reverse index should point to reg-test, got %s", revDevice)
 		}
@@ -202,16 +202,16 @@ func TestAuthMiddleware(t *testing.T) {
 	hash := sha256.Sum256([]byte(testKey))
 	hashHex := hex.EncodeToString(hash[:])
 
-	testRdb.HSet(ctx, "device:"+testDevice,
+	testRdb.HSet(ctx, "agentlink:device:"+testDevice,
 		"sessions", `["main"]`,
 		"api_key_hash", hashHex,
 		"registered_at", "2026-01-01T00:00:00Z",
 		"last_seen", "2026-01-01T00:00:00Z",
 	)
-	testRdb.Set(ctx, "api_key:"+hashHex, testDevice, 0)
+	testRdb.Set(ctx, "agentlink:api_key:"+hashHex, testDevice, 0)
 
 	t.Cleanup(func() {
-		testRdb.Del(ctx, "device:"+testDevice, "api_key:"+hashHex)
+		testRdb.Del(ctx, "agentlink:device:"+testDevice, "agentlink:api_key:"+hashHex)
 	})
 
 	t.Run("health is public", func(t *testing.T) {
@@ -237,9 +237,9 @@ func TestAuthMiddleware(t *testing.T) {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
 		}
 		// Clean up
-		testRdb.Del(ctx, "device:mid-public")
+		testRdb.Del(ctx, "agentlink:device:mid-public")
 		h := sha256.Sum256([]byte("sk_live_"))
-		testRdb.Del(ctx, "api_key:"+hex.EncodeToString(h[:]))
+		testRdb.Del(ctx, "agentlink:api_key:"+hex.EncodeToString(h[:]))
 	})
 
 	t.Run("no token returns 401", func(t *testing.T) {
@@ -335,7 +335,7 @@ func TestMessages(t *testing.T) {
 	hashHex := hex.EncodeToString(hash[:])
 
 	t.Cleanup(func() {
-		testRdb.Del(ctx, "device:msg-test", "api_key:"+hashHex, "inbox:msg-test:main", "inbox:msg-test:worker")
+		testRdb.Del(ctx, "agentlink:device:msg-test", "agentlink:api_key:"+hashHex, "agentlink:inbox:msg-test:main", "agentlink:inbox:msg-test:worker")
 	})
 
 	// --- POST /messages/send ---
@@ -364,7 +364,7 @@ func TestMessages(t *testing.T) {
 		}
 
 		// Verify message in Redis
-		data, err := testRdb.LIndex(ctx, "inbox:msg-test:worker", 0).Result()
+		data, err := testRdb.LIndex(ctx, "agentlink:inbox:msg-test:worker", 0).Result()
 		if err != nil {
 			t.Fatal("message not found in inbox")
 		}
@@ -557,7 +557,7 @@ func TestMessages(t *testing.T) {
 	// --- GET /inbox/pull ---
 
 	// Pre-load 5 messages for pull tests
-	testRdb.Del(ctx, "inbox:msg-test:worker")
+	testRdb.Del(ctx, "agentlink:inbox:msg-test:worker")
 	for i := 0; i < 5; i++ {
 		msg := Message{
 			ID:          fmt.Sprintf("msg-%d", i),
@@ -568,7 +568,7 @@ func TestMessages(t *testing.T) {
 			CreatedAt:   "2026-01-01T00:00:00Z",
 		}
 		data, _ := json.Marshal(msg)
-		testRdb.LPush(ctx, "inbox:msg-test:worker", data)
+		testRdb.LPush(ctx, "agentlink:inbox:msg-test:worker", data)
 	}
 
 	t.Run("pull success", func(t *testing.T) {
@@ -594,7 +594,7 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("pull consumes messages", func(t *testing.T) {
-		rem, _ := testRdb.LLen(ctx, "inbox:msg-test:worker").Result()
+		rem, _ := testRdb.LLen(ctx, "agentlink:inbox:msg-test:worker").Result()
 		if rem != 4 {
 			t.Errorf("expected 4 remaining after 1 pull, got %d", rem)
 		}
@@ -617,7 +617,7 @@ func TestMessages(t *testing.T) {
 		if len(pr.Items) != 3 {
 			t.Errorf("expected 3 items, got %d", len(pr.Items))
 		}
-		rem, _ := testRdb.LLen(ctx, "inbox:msg-test:worker").Result()
+		rem, _ := testRdb.LLen(ctx, "agentlink:inbox:msg-test:worker").Result()
 		if rem != 1 {
 			t.Errorf("expected 1 remaining, got %d", rem)
 		}
@@ -626,7 +626,7 @@ func TestMessages(t *testing.T) {
 	t.Run("pull default limit", func(t *testing.T) {
 		msg := Message{ID: "default-limit", Type: "msg", FromDevice: "msg-test", FromSession: "main", Content: "test", CreatedAt: "2026-01-01T00:00:00Z"}
 		data, _ := json.Marshal(msg)
-		testRdb.LPush(ctx, "inbox:msg-test:worker", data)
+		testRdb.LPush(ctx, "agentlink:inbox:msg-test:worker", data)
 
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -646,7 +646,7 @@ func TestMessages(t *testing.T) {
 	t.Run("pull limit zero defaults to 1", func(t *testing.T) {
 		msg := Message{ID: "zero-limit", Type: "msg", FromDevice: "msg-test", FromSession: "main", Content: "test", CreatedAt: "2026-01-01T00:00:00Z"}
 		data, _ := json.Marshal(msg)
-		testRdb.LPush(ctx, "inbox:msg-test:worker", data)
+		testRdb.LPush(ctx, "agentlink:inbox:msg-test:worker", data)
 
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&limit=0", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)

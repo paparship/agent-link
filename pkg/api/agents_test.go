@@ -20,7 +20,7 @@ func setupAgent(t *testing.T, device string, sessions []string, lastSeen time.Ti
 	h := sha256.Sum256([]byte(apiKey))
 	hashHex := hex.EncodeToString(h[:])
 
-	err := testRdb.HSet(ctx, "device:"+device,
+	err := testRdb.HSet(ctx, "agentlink:device:"+device,
 		"sessions", string(sessionsJSON),
 		"api_key_hash", hashHex,
 		"registered_at", lastSeen.Format(time.RFC3339),
@@ -29,7 +29,7 @@ func setupAgent(t *testing.T, device string, sessions []string, lastSeen time.Ti
 	if err != nil {
 		t.Fatal(err)
 	}
-	testRdb.Set(ctx, "api_key:"+hashHex, device, 0)
+	testRdb.Set(ctx, "agentlink:api_key:"+hashHex, device, 0)
 
 	return apiKey
 }
@@ -40,7 +40,7 @@ func cleanupAgent(t *testing.T, device string) {
 
 	h := sha256.Sum256([]byte("sk_live_test_" + device))
 	hashHex := hex.EncodeToString(h[:])
-	testRdb.Del(ctx, "device:"+device, "api_key:"+hashHex)
+	testRdb.Del(ctx, "agentlink:device:"+device, "agentlink:api_key:"+hashHex)
 }
 
 func TestHeartbeat(t *testing.T) {
@@ -51,7 +51,7 @@ func TestHeartbeat(t *testing.T) {
 	// Set last_seen to an old value first
 	ctx := context.Background()
 	oldTime := now.Add(-5 * time.Minute).Format(time.RFC3339)
-	testRdb.HSet(ctx, "device:hb-device", "last_seen", oldTime)
+	testRdb.HSet(ctx, "agentlink:device:hb-device", "last_seen", oldTime)
 
 	t.Run("heartbeat updates last_seen", func(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/agents/heartbeat", nil)
@@ -74,7 +74,7 @@ func TestHeartbeat(t *testing.T) {
 		}
 
 		// Verify last_seen was updated (should now be recent)
-		lastSeen, _ := testRdb.HGet(ctx, "device:hb-device", "last_seen").Result()
+		lastSeen, _ := testRdb.HGet(ctx, "agentlink:device:hb-device", "last_seen").Result()
 		t1, _ := time.Parse(time.RFC3339, lastSeen)
 		t2, _ := time.Parse(time.RFC3339, oldTime)
 		if !t1.After(t2) {
@@ -219,22 +219,22 @@ func TestListOnlineDetection(t *testing.T) {
 	}
 
 	t.Run("recent last_seen is online", func(t *testing.T) {
-		testRdb.HSet(ctx, "device:online-test", "last_seen", now.Format(time.RFC3339))
+		testRdb.HSet(ctx, "agentlink:device:online-test", "last_seen", now.Format(time.RFC3339))
 		checkOnline(true)
 	})
 
 	t.Run("old last_seen is offline", func(t *testing.T) {
-		testRdb.HSet(ctx, "device:online-test", "last_seen", now.Add(-3*time.Minute).Format(time.RFC3339))
+		testRdb.HSet(ctx, "agentlink:device:online-test", "last_seen", now.Add(-3*time.Minute).Format(time.RFC3339))
 		checkOnline(false)
 	})
 
 	t.Run("exactly 119s is online", func(t *testing.T) {
-		testRdb.HSet(ctx, "device:online-test", "last_seen", now.Add(-119*time.Second).Format(time.RFC3339))
+		testRdb.HSet(ctx, "agentlink:device:online-test", "last_seen", now.Add(-119*time.Second).Format(time.RFC3339))
 		checkOnline(true)
 	})
 
 	t.Run("exactly 121s is offline", func(t *testing.T) {
-		testRdb.HSet(ctx, "device:online-test", "last_seen", now.Add(-121*time.Second).Format(time.RFC3339))
+		testRdb.HSet(ctx, "agentlink:device:online-test", "last_seen", now.Add(-121*time.Second).Format(time.RFC3339))
 		checkOnline(false)
 	})
 }
@@ -286,7 +286,7 @@ func TestPatchSessions(t *testing.T) {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
-		sessionsJSON, _ := testRdb.HGet(ctx, "device:patch-sess", "sessions").Result()
+		sessionsJSON, _ := testRdb.HGet(ctx, "agentlink:device:patch-sess", "sessions").Result()
 		var sessions []string
 		json.Unmarshal([]byte(sessionsJSON), &sessions)
 		if len(sessions) != 3 || sessions[2] != "reviewer" {
@@ -304,7 +304,7 @@ func TestPatchSessions(t *testing.T) {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
-		sessionsJSON, _ := testRdb.HGet(ctx, "device:patch-sess", "sessions").Result()
+		sessionsJSON, _ := testRdb.HGet(ctx, "agentlink:device:patch-sess", "sessions").Result()
 		var sessions []string
 		json.Unmarshal([]byte(sessionsJSON), &sessions)
 		if len(sessions) != 2 {
@@ -342,7 +342,7 @@ func TestDeleteSession(t *testing.T) {
 	defer cleanupAgent(t, "del-sess")
 
 	// Put something in the inbox to verify cleanup
-	inboxKey := "inbox:del-sess:reviewer"
+	inboxKey := "agentlink:inbox:del-sess:reviewer"
 	testRdb.LPush(ctx, inboxKey, `{"id":"test"}`)
 
 	doReq := func(name string) (*http.Response, error) {
@@ -362,7 +362,7 @@ func TestDeleteSession(t *testing.T) {
 		}
 
 		// Verify session removed from list
-		sessionsJSON, _ := testRdb.HGet(ctx, "device:del-sess", "sessions").Result()
+		sessionsJSON, _ := testRdb.HGet(ctx, "agentlink:device:del-sess", "sessions").Result()
 		var sessions []string
 		json.Unmarshal([]byte(sessionsJSON), &sessions)
 		if len(sessions) != 2 {
@@ -439,10 +439,10 @@ func TestDeleteDevice(t *testing.T) {
 	hashHex := hex.EncodeToString(h[:])
 
 	// Create inbox and task data to verify cleanup
-	testRdb.LPush(ctx, "inbox:del-dev:main", `{"id":"msg1"}`)
-	testRdb.LPush(ctx, "inbox:del-dev:worker", `{"id":"msg2"}`)
-	testRdb.HSet(ctx, "task:t-del-dev", "status", "issued", "assigned_to", "del-dev:worker")
-	testRdb.SAdd(ctx, "tasks:del-dev:worker", "t-del-dev")
+	testRdb.LPush(ctx, "agentlink:inbox:del-dev:main", `{"id":"msg1"}`)
+	testRdb.LPush(ctx, "agentlink:inbox:del-dev:worker", `{"id":"msg2"}`)
+	testRdb.HSet(ctx, "agentlink:task:t-del-dev", "status", "issued", "assigned_to", "del-dev:worker")
+	testRdb.SAdd(ctx, "agentlink:tasks:del-dev:worker", "t-del-dev")
 
 	t.Run("delete device", func(t *testing.T) {
 		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/device", nil)
@@ -457,29 +457,29 @@ func TestDeleteDevice(t *testing.T) {
 		}
 
 		// Verify device deleted
-		exists, _ := testRdb.Exists(ctx, "device:del-dev").Result()
+		exists, _ := testRdb.Exists(ctx, "agentlink:device:del-dev").Result()
 		if exists != 0 {
 			t.Error("expected device:del-dev to be deleted")
 		}
 
 		// Verify API key index deleted
-		exists, _ = testRdb.Exists(ctx, "api_key:"+hashHex).Result()
+		exists, _ = testRdb.Exists(ctx, "agentlink:api_key:"+hashHex).Result()
 		if exists != 0 {
 			t.Error("expected api_key index to be deleted")
 		}
 
 		// Verify inboxes deleted
-		exists, _ = testRdb.Exists(ctx, "inbox:del-dev:main", "inbox:del-dev:worker").Result()
+		exists, _ = testRdb.Exists(ctx, "agentlink:inbox:del-dev:main", "agentlink:inbox:del-dev:worker").Result()
 		if exists != 0 {
 			t.Error("expected inboxes to be deleted")
 		}
 
 		// Verify tasks and tracking sets deleted
-		exists, _ = testRdb.Exists(ctx, "task:t-del-dev").Result()
+		exists, _ = testRdb.Exists(ctx, "agentlink:task:t-del-dev").Result()
 		if exists != 0 {
 			t.Error("expected task to be deleted")
 		}
-		exists, _ = testRdb.Exists(ctx, "tasks:del-dev:worker").Result()
+		exists, _ = testRdb.Exists(ctx, "agentlink:tasks:del-dev:worker").Result()
 		if exists != 0 {
 			t.Error("expected tracking set to be deleted")
 		}
