@@ -158,3 +158,25 @@ agentlink init --server https://your-domain.com --password <password>
 | `REGISTER_PASSWORD` | (required) | Password for device registration |
 
 `REGISTER_PASSWORD` can be unset after all devices are registered — registration is one-time.
+
+## Removal
+
+To completely remove the server from the machine:
+
+```bash
+# 1. Stop the server (cleans PID files)
+cd /home/jiefan/agent-link/deploy && bash stop.sh
+
+# 2. Delete agentlink Redis data only (does not affect other services)
+redis-cli KEYS "agentlink:*" | xargs -r redis-cli DEL
+
+# 3. Delete binaries and logs
+rm -f /home/jiefan/agent-link/deploy/server
+rm -f /home/jiefan/agent-link/deploy/server.log
+rm -f /home/jiefan/agent-link/deploy/agentlink
+
+# 4. (Optional) Delete the entire project
+rm -rf /home/jiefan/agent-link
+```
+
+For a clean reinstall, steps 1-2 and replacing `deploy/server` are sufficient.
