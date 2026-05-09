@@ -37,9 +37,9 @@ func TestTasks(t *testing.T) {
 
 	// Cleanup all task data after suite
 	t.Cleanup(func() {
-		testRdb.Del(ctx, "device:task-test")
-		testRdb.Del(ctx, "api_key:"+apiKeyHashHex)
-		for _, pattern := range []string{"task:*", "tasks:*", "inbox:task-test:*"} {
+		testRdb.Del(ctx, "agentlink:device:task-test")
+		testRdb.Del(ctx, "agentlink:api_key:"+apiKeyHashHex)
+		for _, pattern := range []string{"agentlink:task:*", "agentlink:tasks:*", "agentlink:inbox:task-test:*"} {
 			keys, _ := testRdb.Keys(ctx, pattern).Result()
 			testRdb.Del(ctx, keys...)
 		}
@@ -47,7 +47,7 @@ func TestTasks(t *testing.T) {
 
 	// Clean inbox between subtests
 	cleanInbox := func() {
-		testRdb.Del(ctx, "inbox:task-test:worker", "inbox:task-test:main")
+		testRdb.Del(ctx, "agentlink:inbox:task-test:worker", "agentlink:inbox:task-test:main")
 	}
 
 	// ===================== POST /tasks/send =====================
@@ -75,35 +75,35 @@ func TestTasks(t *testing.T) {
 		}
 
 		// Verify Redis task record
-		status, _ := testRdb.HGet(ctx, "task:t-send-ok", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-send-ok", "status").Result()
 		if status != "issued" {
 			t.Errorf("expected status=issued, got %s", status)
 		}
-		assignedTo, _ := testRdb.HGet(ctx, "task:t-send-ok", "assigned_to").Result()
+		assignedTo, _ := testRdb.HGet(ctx, "agentlink:task:t-send-ok", "assigned_to").Result()
 		if assignedTo != "task-test:worker" {
 			t.Errorf("expected assigned_to=task-test:worker, got %s", assignedTo)
 		}
-		issuedBy, _ := testRdb.HGet(ctx, "task:t-send-ok", "issued_by").Result()
+		issuedBy, _ := testRdb.HGet(ctx, "agentlink:task:t-send-ok", "issued_by").Result()
 		if issuedBy != "task-test:main" {
 			t.Errorf("expected issued_by=task-test:main, got %s", issuedBy)
 		}
-		content, _ := testRdb.HGet(ctx, "task:t-send-ok", "content").Result()
+		content, _ := testRdb.HGet(ctx, "agentlink:task:t-send-ok", "content").Result()
 		if content != "fix login bug" {
 			t.Errorf("content mismatch: %s", content)
 		}
-		ttl, _ := testRdb.TTL(ctx, "task:t-send-ok").Result()
+		ttl, _ := testRdb.TTL(ctx, "agentlink:task:t-send-ok").Result()
 		if ttl <= 0 {
 			t.Error("expected positive TTL for task record")
 		}
 
 		// Verify tracking set
-		members, _ := testRdb.SMembers(ctx, "tasks:task-test:worker").Result()
+		members, _ := testRdb.SMembers(ctx, "agentlink:tasks:task-test:worker").Result()
 		if !containsStr(members, "t-send-ok") {
 			t.Error("task should be in tracking set")
 		}
 
 		// Verify inbox item
-		data, _ := testRdb.LIndex(ctx, "inbox:task-test:worker", 0).Result()
+		data, _ := testRdb.LIndex(ctx, "agentlink:inbox:task-test:worker", 0).Result()
 		var msg Message
 		json.Unmarshal([]byte(data), &msg)
 		if msg.Type != "task" {
@@ -117,14 +117,14 @@ func TestTasks(t *testing.T) {
 		}
 
 		// Cleanup
-		testRdb.Del(ctx, "task:t-send-ok")
-		testRdb.Del(ctx, "tasks:task-test:worker")
+		testRdb.Del(ctx, "agentlink:task:t-send-ok")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 	})
 
 	t.Run("send duplicate task_id", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-dup", "task_id", "t-dup", "status", "issued")
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-dup") })
+		testRdb.HSet(ctx, "agentlink:task:t-dup", "task_id", "t-dup", "status", "issued")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-dup") })
 
 		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-dup","content":"test"}`
 		resp, err := doReq("POST", "/tasks/send", body)
@@ -140,11 +140,11 @@ func TestTasks(t *testing.T) {
 
 	t.Run("send busy in_progress", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-busy", "task_id", "t-busy", "status", "in_progress")
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-busy")
+		testRdb.HSet(ctx, "agentlink:task:t-busy", "task_id", "t-busy", "status", "in_progress")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-busy")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-busy")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-busy")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-busy-2","content":"test"}`
@@ -166,12 +166,12 @@ func TestTasks(t *testing.T) {
 
 	t.Run("send busy 2 suspended", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-susp-a", "task_id", "t-susp-a", "status", "suspended")
-		testRdb.HSet(ctx, "task:t-susp-b", "task_id", "t-susp-b", "status", "suspended")
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-susp-a", "t-susp-b")
+		testRdb.HSet(ctx, "agentlink:task:t-susp-a", "task_id", "t-susp-a", "status", "suspended")
+		testRdb.HSet(ctx, "agentlink:task:t-susp-b", "task_id", "t-susp-b", "status", "suspended")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-susp-a", "t-susp-b")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-susp-a", "task:t-susp-b")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-susp-a", "agentlink:task:t-susp-b")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-susp-blocked","content":"test"}`
@@ -188,11 +188,11 @@ func TestTasks(t *testing.T) {
 
 	t.Run("send 1 suspended allowed", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-susp-1", "task_id", "t-susp-1", "status", "suspended")
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-susp-1")
+		testRdb.HSet(ctx, "agentlink:task:t-susp-1", "task_id", "t-susp-1", "status", "suspended")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-susp-1")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-susp-1")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-susp-1")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-susp-ok","content":"test"}`
@@ -205,7 +205,7 @@ func TestTasks(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200 for 1 suspended, got %d", resp.StatusCode)
 		}
-		testRdb.Del(ctx, "task:t-susp-ok")
+		testRdb.Del(ctx, "agentlink:task:t-susp-ok")
 	})
 
 	t.Run("send missing fields", func(t *testing.T) {
@@ -259,7 +259,7 @@ func TestTasks(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200 for 3000-char content, got %d", resp.StatusCode)
 		}
-		testRdb.Del(ctx, "task:t-3000")
+		testRdb.Del(ctx, "agentlink:task:t-3000")
 	})
 
 	t.Run("send target device not found", func(t *testing.T) {
@@ -318,13 +318,13 @@ func TestTasks(t *testing.T) {
 
 	t.Run("pull task auto in_progress", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-pull-auto", "task_id", "t-pull-auto", "status", "issued")
+		testRdb.HSet(ctx, "agentlink:task:t-pull-auto", "task_id", "t-pull-auto", "status", "issued")
 		msg := Message{ID: "pull-1", Type: "task", FromDevice: "task-test", FromSession: "main", TaskID: "t-pull-auto", Content: "do something", CreatedAt: "2026-01-01T00:00:00Z"}
 		data, _ := json.Marshal(msg)
-		testRdb.LPush(ctx, "inbox:task-test:worker", data)
+		testRdb.LPush(ctx, "agentlink:inbox:task-test:worker", data)
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-pull-auto", "tasks:task-test:worker")
-			testRdb.Del(ctx, "inbox:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-pull-auto", "agentlink:tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:inbox:task-test:worker")
 		})
 
 		resp, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
@@ -349,7 +349,7 @@ func TestTasks(t *testing.T) {
 		}
 
 		// Verify task status changed to in_progress
-		status, _ := testRdb.HGet(ctx, "task:t-pull-auto", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-pull-auto", "status").Result()
 		if status != "in_progress" {
 			t.Errorf("expected status=in_progress after pull, got %s", status)
 		}
@@ -359,8 +359,8 @@ func TestTasks(t *testing.T) {
 		cleanInbox()
 		msg := Message{ID: "plain-msg", Type: "msg", FromDevice: "task-test", FromSession: "main", Content: "hello", CreatedAt: "2026-01-01T00:00:00Z"}
 		data, _ := json.Marshal(msg)
-		testRdb.LPush(ctx, "inbox:task-test:worker", data)
-		t.Cleanup(func() { testRdb.Del(ctx, "inbox:task-test:worker") })
+		testRdb.LPush(ctx, "agentlink:inbox:task-test:worker", data)
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:inbox:task-test:worker") })
 
 		resp, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
 		if err != nil {
@@ -382,15 +382,15 @@ func TestTasks(t *testing.T) {
 
 	t.Run("result completed", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-res-ok",
+		testRdb.HSet(ctx, "agentlink:task:t-res-ok",
 			"task_id", "t-res-ok", "status", "in_progress",
 			"assigned_to", "task-test:worker", "issued_by", "task-test:main",
 			"content", "test", "issued_at", "2026-01-01T00:00:00Z",
 		)
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-res-ok")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-res-ok")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-res-ok")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-res-ok")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"task_id":"t-res-ok","status":"completed","result":"bug fixed"}`
@@ -405,21 +405,21 @@ func TestTasks(t *testing.T) {
 		}
 
 		// Verify task state
-		status, _ := testRdb.HGet(ctx, "task:t-res-ok", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-res-ok", "status").Result()
 		if status != "completed" {
 			t.Errorf("expected status=completed, got %s", status)
 		}
-		result, _ := testRdb.HGet(ctx, "task:t-res-ok", "result").Result()
+		result, _ := testRdb.HGet(ctx, "agentlink:task:t-res-ok", "result").Result()
 		if result != "bug fixed" {
 			t.Errorf("expected result=bug fixed, got %s", result)
 		}
-		completedAt, _ := testRdb.HGet(ctx, "task:t-res-ok", "completed_at").Result()
+		completedAt, _ := testRdb.HGet(ctx, "agentlink:task:t-res-ok", "completed_at").Result()
 		if completedAt == "" {
 			t.Error("completed_at should not be empty")
 		}
 
 		// Verify removed from tracking set
-		members, _ := testRdb.SMembers(ctx, "tasks:task-test:worker").Result()
+		members, _ := testRdb.SMembers(ctx, "agentlink:tasks:task-test:worker").Result()
 		if containsStr(members, "t-res-ok") {
 			t.Error("task should be removed from tracking set on complete")
 		}
@@ -427,15 +427,15 @@ func TestTasks(t *testing.T) {
 
 	t.Run("result suspended", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-res-susp",
+		testRdb.HSet(ctx, "agentlink:task:t-res-susp",
 			"task_id", "t-res-susp", "status", "in_progress",
 			"assigned_to", "task-test:worker", "issued_by", "task-test:main",
 			"content", "test",
 		)
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-res-susp")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-res-susp")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-res-susp")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-res-susp")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"task_id":"t-res-susp","status":"suspended","result":"need more info"}`
@@ -449,17 +449,17 @@ func TestTasks(t *testing.T) {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
-		status, _ := testRdb.HGet(ctx, "task:t-res-susp", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-res-susp", "status").Result()
 		if status != "suspended" {
 			t.Errorf("expected status=suspended, got %s", status)
 		}
-		result, _ := testRdb.HGet(ctx, "task:t-res-susp", "result").Result()
+		result, _ := testRdb.HGet(ctx, "agentlink:task:t-res-susp", "result").Result()
 		if result != "need more info" {
 			t.Errorf("expected result=need more info, got %s", result)
 		}
 
 		// Verify removed from tracking set
-		members, _ := testRdb.SMembers(ctx, "tasks:task-test:worker").Result()
+		members, _ := testRdb.SMembers(ctx, "agentlink:tasks:task-test:worker").Result()
 		if containsStr(members, "t-res-susp") {
 			t.Error("task should be removed from tracking set on suspend")
 		}
@@ -479,8 +479,8 @@ func TestTasks(t *testing.T) {
 
 	t.Run("result invalid status", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-res-bad", "status", "in_progress")
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-res-bad") })
+		testRdb.HSet(ctx, "agentlink:task:t-res-bad", "status", "in_progress")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-res-bad") })
 
 		body := `{"task_id":"t-res-bad","status":"invalid","result":"x"}`
 		resp, err := doReq("POST", "/tasks/result", body)
@@ -495,8 +495,8 @@ func TestTasks(t *testing.T) {
 
 	t.Run("result not in_progress", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-res-nip", "status", "issued")
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-res-nip") })
+		testRdb.HSet(ctx, "agentlink:task:t-res-nip", "status", "issued")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-res-nip") })
 
 		body := `{"task_id":"t-res-nip","status":"completed","result":"x"}`
 		resp, err := doReq("POST", "/tasks/result", body)
@@ -525,12 +525,12 @@ func TestTasks(t *testing.T) {
 
 	t.Run("resume success", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-resume",
+		testRdb.HSet(ctx, "agentlink:task:t-resume",
 			"task_id", "t-resume", "status", "suspended",
 			"assigned_to", "task-test:worker", "issued_by", "task-test:main",
 			"content", "original task", "result", "blocked",
 		)
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-resume") })
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-resume") })
 
 		body := `{"task_id":"t-resume","content":"new guidance: do X first"}`
 		resp, err := doReq("POST", "/tasks/resume", body)
@@ -544,26 +544,26 @@ func TestTasks(t *testing.T) {
 		}
 
 		// Verify task state
-		status, _ := testRdb.HGet(ctx, "task:t-resume", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-resume", "status").Result()
 		if status != "in_progress" {
 			t.Errorf("expected status=in_progress, got %s", status)
 		}
-		content, _ := testRdb.HGet(ctx, "task:t-resume", "content").Result()
+		content, _ := testRdb.HGet(ctx, "agentlink:task:t-resume", "content").Result()
 		if content != "new guidance: do X first" {
 			t.Errorf("expected updated content, got %s", content)
 		}
-		result, _ := testRdb.HGet(ctx, "task:t-resume", "result").Result()
+		result, _ := testRdb.HGet(ctx, "agentlink:task:t-resume", "result").Result()
 		if result != "" {
 			t.Errorf("expected result cleared, got %s", result)
 		}
 
 		// Verify re-added to tracking set
-		members, _ := testRdb.SMembers(ctx, "tasks:task-test:worker").Result()
+		members, _ := testRdb.SMembers(ctx, "agentlink:tasks:task-test:worker").Result()
 		if !containsStr(members, "t-resume") {
 			t.Error("task should be re-added to tracking set on resume")
 		}
-		testRdb.Del(ctx, "tasks:task-test:worker")
-		testRdb.Del(ctx, "inbox:task-test:worker")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+		testRdb.Del(ctx, "agentlink:inbox:task-test:worker")
 	})
 
 	t.Run("resume not found", func(t *testing.T) {
@@ -580,8 +580,8 @@ func TestTasks(t *testing.T) {
 
 	t.Run("resume not suspended", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-resume-ns", "status", "in_progress")
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-resume-ns") })
+		testRdb.HSet(ctx, "agentlink:task:t-resume-ns", "status", "in_progress")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-resume-ns") })
 
 		body := `{"task_id":"t-resume-ns","content":"new guidance"}`
 		resp, err := doReq("POST", "/tasks/resume", body)
@@ -610,15 +610,15 @@ func TestTasks(t *testing.T) {
 
 	t.Run("cancel success", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-cancel",
+		testRdb.HSet(ctx, "agentlink:task:t-cancel",
 			"task_id", "t-cancel", "status", "issued",
 			"assigned_to", "task-test:worker", "issued_by", "task-test:main",
 			"content", "test",
 		)
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-cancel")
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-cancel")
 		t.Cleanup(func() {
-			testRdb.Del(ctx, "task:t-cancel")
-			testRdb.Del(ctx, "tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:task:t-cancel")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 		})
 
 		body := `{"task_id":"t-cancel"}`
@@ -632,16 +632,16 @@ func TestTasks(t *testing.T) {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 
-		status, _ := testRdb.HGet(ctx, "task:t-cancel", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-cancel", "status").Result()
 		if status != "cancelled" {
 			t.Errorf("expected status=cancelled, got %s", status)
 		}
-		completedAt, _ := testRdb.HGet(ctx, "task:t-cancel", "completed_at").Result()
+		completedAt, _ := testRdb.HGet(ctx, "agentlink:task:t-cancel", "completed_at").Result()
 		if completedAt == "" {
 			t.Error("completed_at should not be empty")
 		}
 
-		members, _ := testRdb.SMembers(ctx, "tasks:task-test:worker").Result()
+		members, _ := testRdb.SMembers(ctx, "agentlink:tasks:task-test:worker").Result()
 		if containsStr(members, "t-cancel") {
 			t.Error("task should be removed from tracking set on cancel")
 		}
@@ -649,8 +649,8 @@ func TestTasks(t *testing.T) {
 
 	t.Run("cancel already completed", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-cancel-done", "status", "completed")
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-cancel-done") })
+		testRdb.HSet(ctx, "agentlink:task:t-cancel-done", "status", "completed")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-cancel-done") })
 
 		body := `{"task_id":"t-cancel-done"}`
 		resp, err := doReq("POST", "/tasks/cancel", body)
@@ -691,14 +691,14 @@ func TestTasks(t *testing.T) {
 
 	t.Run("status success", func(t *testing.T) {
 		cleanInbox()
-		testRdb.HSet(ctx, "task:t-status-ok",
+		testRdb.HSet(ctx, "agentlink:task:t-status-ok",
 			"task_id", "t-status-ok", "status", "completed",
 			"assigned_to", "task-test:worker", "issued_by", "task-test:main",
 			"content", "fix bug", "result", "done",
 			"issued_at", "2026-01-01T00:00:00Z",
 			"completed_at", "2026-01-01T01:00:00Z",
 		)
-		t.Cleanup(func() { testRdb.Del(ctx, "task:t-status-ok") })
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:task:t-status-ok") })
 
 		resp, err := doReq("GET", "/tasks/status?task_id=t-status-ok", "")
 		if err != nil {
@@ -782,7 +782,7 @@ func TestTasks(t *testing.T) {
 			t.Fatalf("expected 1 item from pull, got %d", len(pr.Items))
 		}
 
-		status, _ := testRdb.HGet(ctx, "task:t-life-1", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-life-1", "status").Result()
 		if status != "in_progress" {
 			t.Errorf("expected in_progress after pull, got %s", status)
 		}
@@ -794,7 +794,7 @@ func TestTasks(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		status, _ = testRdb.HGet(ctx, "task:t-life-1", "status").Result()
+		status, _ = testRdb.HGet(ctx, "agentlink:task:t-life-1", "status").Result()
 		if status != "completed" {
 			t.Errorf("expected completed, got %s", status)
 		}
@@ -813,7 +813,7 @@ func TestTasks(t *testing.T) {
 			t.Errorf("expected result=fixed, got %s", tsResp.Result)
 		}
 
-		testRdb.Del(ctx, "task:t-life-1")
+		testRdb.Del(ctx, "agentlink:task:t-life-1")
 	})
 
 	t.Run("lifecycle suspend resume complete", func(t *testing.T) {
@@ -831,7 +831,7 @@ func TestTasks(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		status, _ := testRdb.HGet(ctx, "task:t-life-2", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-life-2", "status").Result()
 		if status != "suspended" {
 			t.Errorf("expected suspended, got %s", status)
 		}
@@ -843,7 +843,7 @@ func TestTasks(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		status, _ = testRdb.HGet(ctx, "task:t-life-2", "status").Result()
+		status, _ = testRdb.HGet(ctx, "agentlink:task:t-life-2", "status").Result()
 		if status != "in_progress" {
 			t.Errorf("expected in_progress after resume, got %s", status)
 		}
@@ -868,14 +868,14 @@ func TestTasks(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		status, _ = testRdb.HGet(ctx, "task:t-life-2", "status").Result()
+		status, _ = testRdb.HGet(ctx, "agentlink:task:t-life-2", "status").Result()
 		if status != "completed" {
 			t.Errorf("expected completed, got %s", status)
 		}
 
-		testRdb.Del(ctx, "task:t-life-2")
-		testRdb.Del(ctx, "inbox:task-test:worker")
-		testRdb.Del(ctx, "tasks:task-test:worker")
+		testRdb.Del(ctx, "agentlink:task:t-life-2")
+		testRdb.Del(ctx, "agentlink:inbox:task-test:worker")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 	})
 
 	t.Run("lifecycle send cancel", func(t *testing.T) {
@@ -895,20 +895,20 @@ func TestTasks(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		status, _ := testRdb.HGet(ctx, "task:t-life-3", "status").Result()
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-life-3", "status").Result()
 		if status != "cancelled" {
 			t.Errorf("expected cancelled, got %s", status)
 		}
 
-		testRdb.Del(ctx, "task:t-life-3")
+		testRdb.Del(ctx, "agentlink:task:t-life-3")
 	})
 
 	t.Run("task list", func(t *testing.T) {
 		cleanInbox()
-		defer testRdb.Del(ctx, "tasks:task-test:worker")
+		defer testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 
 		// Create a couple of tasks
-		testRdb.HSet(ctx, "task:t-list-1",
+		testRdb.HSet(ctx, "agentlink:task:t-list-1",
 			"task_id", "t-list-1",
 			"status", "issued",
 			"assigned_to", "task-test:worker",
@@ -916,11 +916,11 @@ func TestTasks(t *testing.T) {
 			"content", "first task",
 			"issued_at", "2026-01-01T00:00:00Z",
 		)
-		testRdb.Expire(ctx, "task:t-list-1", 7*24*3600)
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-list-1")
-		defer testRdb.Del(ctx, "task:t-list-1")
+		testRdb.Expire(ctx, "agentlink:task:t-list-1", 7*24*3600)
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-list-1")
+		defer testRdb.Del(ctx, "agentlink:task:t-list-1")
 
-		testRdb.HSet(ctx, "task:t-list-2",
+		testRdb.HSet(ctx, "agentlink:task:t-list-2",
 			"task_id", "t-list-2",
 			"status", "in_progress",
 			"assigned_to", "task-test:worker",
@@ -928,9 +928,9 @@ func TestTasks(t *testing.T) {
 			"content", "second task",
 			"issued_at", "2026-01-01T00:01:00Z",
 		)
-		testRdb.Expire(ctx, "task:t-list-2", 7*24*3600)
-		testRdb.SAdd(ctx, "tasks:task-test:worker", "t-list-2")
-		defer testRdb.Del(ctx, "task:t-list-2")
+		testRdb.Expire(ctx, "agentlink:task:t-list-2", 7*24*3600)
+		testRdb.SAdd(ctx, "agentlink:tasks:task-test:worker", "t-list-2")
+		defer testRdb.Del(ctx, "agentlink:task:t-list-2")
 
 		resp, err := doReq("GET", "/tasks/list?session=worker", "")
 		if err != nil {
