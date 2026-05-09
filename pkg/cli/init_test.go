@@ -122,6 +122,9 @@ func TestWriteSessionTOMLFileMode(t *testing.T) {
 }
 
 func TestRunInitE2E(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude not in PATH, skipping")
+	}
 	// Mock register API
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -249,6 +252,9 @@ func TestRunInitE2E(t *testing.T) {
 }
 
 func TestRunInitE2E_existingDir(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude not in PATH, skipping")
+	}
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
