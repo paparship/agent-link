@@ -27,6 +27,7 @@ type RegisterRequest struct {
 	Device           string   `json:"device"`
 	Sessions         []string `json:"sessions"`
 	RegisterPassword string   `json:"register_password"`
+	Force            bool     `json:"force,omitempty"`
 }
 
 type RegisterResponse struct {
@@ -92,8 +93,36 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists > 0 {
-		writeError(w, http.StatusConflict, fmt.Sprintf("device %q already registered", req.Device))
-		return
+		if req.RegisterPassword != s.registerPassword {
+			writeError(w, http.StatusUnauthorized, "invalid register password"+"; use --force to override")
+			return
+		}
+		if req.Force {
+			s.deleteDeviceData(r.Context(), req.Device)
+			// Fall through to normal registration
+		} else {
+			// Reuse: generate new API key, update device record
+			apiKey, apiKeyHash, err := generateAPIKey()
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			deviceKey := "device:" + req.Device
+			oldHash, _ := s.rdb.HGet(r.Context(), deviceKey, "api_key_hash").Result()
+			if oldHash != "" {
+				s.rdb.Del(r.Context(), "api_key:"+oldHash)
+			}
+			now := time.Now().UTC().Format(time.RFC3339)
+			s.rdb.HSet(r.Context(), deviceKey, "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
+			s.rdb.Set(r.Context(), "api_key:"+apiKeyHash, req.Device, 0)
+			writeJSON(w, http.StatusOK, RegisterResponse{
+				APIKey:       apiKey,
+				Device:       req.Device,
+				Sessions:     req.Sessions,
+				RegisteredAt: now,
+			})
+			return
+		}
 	}
 
 	// Generate API key
@@ -192,10 +221,10 @@ type TaskStatusResponse struct {
 }
 
 type AgentInfo struct {
-	Device    string   `json:"device"`
-	Sessions  []string `json:"sessions"`
-	LastSeen  string   `json:"last_seen"`
-	Online    bool     `json:"online"`
+	Device   string   `json:"device"`
+	Sessions []string `json:"sessions"`
+	LastSeen string   `json:"last_seen"`
+	Online   bool     `json:"online"`
 }
 
 type ListResponse struct {
@@ -356,26 +385,23 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	device, _ := r.Context().Value(contextKeyDevice).(string)
-	ctx := r.Context()
+	s.deleteDeviceData(r.Context(), device)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
 
-	// Get API key hash to delete reverse index
+func (s *Server) deleteDeviceData(ctx context.Context, device string) {
 	apiKeyHash, _ := s.rdb.HGet(ctx, "device:"+device, "api_key_hash").Result()
 
-	// Delete device hash
 	s.rdb.Del(ctx, "device:"+device)
-
-	// Delete API key index
 	if apiKeyHash != "" {
 		s.rdb.Del(ctx, "api_key:"+apiKeyHash)
 	}
 
-	// Delete all inboxes for this device
 	inboxKeys, _ := s.rdb.Keys(ctx, "inbox:"+device+":*").Result()
 	for _, k := range inboxKeys {
 		s.rdb.Del(ctx, k)
 	}
 
-	// Delete all task tracking sets and their tasks
 	trackingKeys, _ := s.rdb.Keys(ctx, "tasks:"+device+":*").Result()
 	for _, tk := range trackingKeys {
 		members, _ := s.rdb.SMembers(ctx, tk).Result()
@@ -384,8 +410,6 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		s.rdb.Del(ctx, tk)
 	}
-
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {

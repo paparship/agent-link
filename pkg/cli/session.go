@@ -124,7 +124,7 @@ func RunSessionRemove(name string) error {
 	return nil
 }
 
-func RunUninstall() error {
+func RunUninstall(purge bool) error {
 	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
@@ -133,12 +133,14 @@ func RunUninstall() error {
 	// Kill tmux sessions (best-effort)
 	killSessionSessions(cfg.BaseDir)
 
-	// Call DELETE /agents/device
-	resp, err := apiDo(cfg, creds, "DELETE", "/agents/device", nil)
-	if err != nil {
-		return err
+	// Deregister from server only on --purge
+	if purge {
+		resp, err := apiDo(cfg, creds, "DELETE", "/agents/device", nil)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
 	}
-	resp.Body.Close()
 
 	// Delete work directory
 	if cfg.BaseDir != "" {
@@ -153,7 +155,12 @@ func RunUninstall() error {
 		return fmt.Errorf("warning: device unregistered from server but could not remove %s: %w", agentlinkDir, err)
 	}
 
-	fmt.Println("✓ Device unregistered")
+	if purge {
+		fmt.Println("✓ Device unregistered")
+	} else {
+		fmt.Println("✓ Local files cleaned")
+		fmt.Println("  Use --purge to also deregister from server")
+	}
 	fmt.Println("  To remove agentlink from PATH, edit ~/.bashrc or ~/.zshrc")
 	return nil
 }

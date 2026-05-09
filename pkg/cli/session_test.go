@@ -195,7 +195,7 @@ func TestRunUninstall(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		if err := RunUninstall(); err != nil {
+		if err := RunUninstall(false); err != nil {
 			t.Fatal(err)
 		}
 
@@ -222,9 +222,9 @@ func TestRunUninstall(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		err := RunUninstall()
+		err := RunUninstall(true)
 		if err == nil {
-			t.Fatal("expected error")
+			t.Fatal("expected error for purge with server error")
 		}
 
 		// Verify local files NOT removed on API failure
@@ -237,7 +237,7 @@ func TestRunUninstall(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunUninstall()
+		err := RunUninstall(false)
 		if err == nil {
 			t.Fatal("expected error")
 		}

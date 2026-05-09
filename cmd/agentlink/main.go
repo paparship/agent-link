@@ -332,7 +332,10 @@ func cmdAttach(args []string) {
 }
 
 func cmdUninstall() {
-	if err := cli.RunUninstall(); err != nil {
+	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
+	purge := fs.Bool("purge", false, "Also deregister from server")
+	fs.Parse(os.Args[2:])
+	if err := cli.RunUninstall(*purge); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
