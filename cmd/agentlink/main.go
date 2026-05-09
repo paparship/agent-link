@@ -75,6 +75,7 @@ func cmdInit(args []string) {
 	device := fs.String("device", "", "Device name (default: hostname)")
 	agent := fs.String("agent", "claude", "Agent type (default: claude)")
 	noPoll := fs.Bool("no-poll", false, "Disable auto-polling (default: false)")
+	force := fs.Bool("force", false, "Force re-register if device exists (default: false)")
 	fs.Parse(args)
 
 	if *server == "" || *password == "" {
@@ -93,6 +94,8 @@ func cmdInit(args []string) {
 		Device:   *device,
 		Path:     path,
 		Agent:    *agent,
+		NoPoll:   *noPoll,
+		Force:    *force,
 	}
 
 	if err := cli.RunInit(opts); err != nil {
