@@ -124,7 +124,10 @@ func TestRegister(t *testing.T) {
 
 	t.Run("wrong password", func(t *testing.T) {
 		body := `{"device":"wp-test","sessions":["main"],"register_password":"wrong"}`
-		resp, _ := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusUnauthorized {
@@ -134,7 +137,10 @@ func TestRegister(t *testing.T) {
 
 	t.Run("invalid device name", func(t *testing.T) {
 		body := `{"device":"INVALID","sessions":["main"],"register_password":"test-password"}`
-		resp, _ := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusBadRequest {
@@ -144,7 +150,10 @@ func TestRegister(t *testing.T) {
 
 	t.Run("empty sessions", func(t *testing.T) {
 		body := `{"device":"es-test","sessions":[],"register_password":"test-password"}`
-		resp, _ := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusBadRequest {
@@ -154,7 +163,10 @@ func TestRegister(t *testing.T) {
 
 	t.Run("duplicate device", func(t *testing.T) {
 		body := `{"device":"reg-test","sessions":["main"],"register_password":"test-password"}`
-		resp, _ := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusConflict {
@@ -184,7 +196,10 @@ func TestAuthMiddleware(t *testing.T) {
 	})
 
 	t.Run("health is public", func(t *testing.T) {
-		resp, _ := http.Get(ts.URL + "/health")
+		resp, err := http.Get(ts.URL + "/health")
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
@@ -194,7 +209,10 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("register is public", func(t *testing.T) {
 		// A request to register without auth should work (no Bearer needed)
 		body := `{"device":"mid-public","sessions":["main"],"register_password":"test-password"}`
-		resp, _ := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
@@ -206,7 +224,10 @@ func TestAuthMiddleware(t *testing.T) {
 	})
 
 	t.Run("no token returns 401", func(t *testing.T) {
-		resp, _ := http.Get(ts.URL + "/messages/send")
+		resp, err := http.Get(ts.URL + "/messages/send")
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -216,7 +237,10 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("empty bearer returns 401", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/nonexistent", nil)
 		req.Header.Set("Authorization", "Bearer")
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -226,7 +250,10 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("invalid token returns 401", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/nonexistent", nil)
 		req.Header.Set("Authorization", "Bearer invalid")
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -236,7 +263,10 @@ func TestAuthMiddleware(t *testing.T) {
 	t.Run("valid token passes auth", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/nonexistent", nil)
 		req.Header.Set("Authorization", "Bearer "+testKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		// 404 = auth passed, route just doesn't exist
 		if resp.StatusCode != http.StatusNotFound {
@@ -346,7 +376,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", resp.StatusCode)
@@ -358,7 +391,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", resp.StatusCode)
@@ -370,7 +406,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", resp.StatusCode)
@@ -383,7 +422,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400 for content>3000, got %d", resp.StatusCode)
@@ -396,7 +438,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200 for 3000-char content, got %d", resp.StatusCode)
@@ -408,7 +453,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400 for no colon, got %d", resp.StatusCode)
@@ -420,7 +468,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400 for bad device name, got %d", resp.StatusCode)
@@ -432,7 +483,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("expected 404 for unknown device, got %d", resp.StatusCode)
@@ -444,7 +498,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("expected 404 for unknown session, got %d", resp.StatusCode)
@@ -453,7 +510,10 @@ func TestMessages(t *testing.T) {
 
 	t.Run("send no auth", func(t *testing.T) {
 		body := `{"to":"msg-test:worker","from_session":"main","content":"hi"}`
-		resp, _ := http.Post(ts.URL+"/messages/send", "application/json", strings.NewReader(body))
+		resp, err := http.Post(ts.URL+"/messages/send", "application/json", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -465,7 +525,10 @@ func TestMessages(t *testing.T) {
 		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer invalid-key")
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -521,7 +584,10 @@ func TestMessages(t *testing.T) {
 	t.Run("pull multiple with limit", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&limit=3", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
@@ -545,7 +611,10 @@ func TestMessages(t *testing.T) {
 
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		var pr PullResponse
@@ -562,7 +631,10 @@ func TestMessages(t *testing.T) {
 
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&limit=0", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
@@ -578,7 +650,10 @@ func TestMessages(t *testing.T) {
 	t.Run("pull limit capped at 100", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&limit=200", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
@@ -594,7 +669,10 @@ func TestMessages(t *testing.T) {
 	t.Run("pull negative limit returns 400", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&limit=-1", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400 for negative limit, got %d", resp.StatusCode)
@@ -604,7 +682,10 @@ func TestMessages(t *testing.T) {
 	t.Run("pull missing session", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?limit=1", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", resp.StatusCode)
@@ -612,7 +693,10 @@ func TestMessages(t *testing.T) {
 	})
 
 	t.Run("pull no auth", func(t *testing.T) {
-		resp, _ := http.Get(ts.URL + "/inbox/pull?session=worker&limit=1")
+		resp, err := http.Get(ts.URL + "/inbox/pull?session=worker&limit=1")
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -622,7 +706,10 @@ func TestMessages(t *testing.T) {
 	t.Run("pull empty inbox", func(t *testing.T) {
 		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=main", nil)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
-		resp, _ := http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
@@ -648,9 +735,12 @@ func TestMessages(t *testing.T) {
 		}
 		resp.Body.Close()
 
-		req2, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=main&limit=1", nil)
+		req2, err := http.NewRequest("GET", ts.URL+"/inbox/pull?session=main&limit=1", nil)
 		req2.Header.Set("Authorization", "Bearer "+apiKey)
-		resp2, _ := http.DefaultClient.Do(req2)
+		resp2, err := http.DefaultClient.Do(req2)
+		if err != nil {
+			t.Fatal(err)
+		}
 		defer resp2.Body.Close()
 
 		var pr PullResponse

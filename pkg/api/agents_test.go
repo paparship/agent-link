@@ -486,7 +486,10 @@ func TestDeleteDevice(t *testing.T) {
 	})
 
 	t.Run("delete device no auth", func(t *testing.T) {
-		resp, _ := http.Post(ts.URL+"/agents/device", "application/json", nil)
+		resp, err := http.Post(ts.URL+"/agents/device", "application/json", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
