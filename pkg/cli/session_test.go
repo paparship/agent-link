@@ -43,7 +43,7 @@ func TestRunSessionAdd(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -77,7 +77,7 @@ func TestRunSessionAdd(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -135,7 +135,7 @@ func TestRunSessionRemove(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -159,7 +159,7 @@ func TestRunSessionRemove(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -190,7 +190,7 @@ func TestRunUninstall(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -217,7 +217,7 @@ func TestRunUninstall(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
@@ -267,7 +267,7 @@ func TestRunAttach_errors(t *testing.T) {
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://localhost:1", "test-device", homeDir, "claude")
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://localhost:1", "test-device", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)

@@ -87,7 +87,7 @@ func RunInit(opts *InitOptions) error {
 
 	// Write config.toml
 	configPath := filepath.Join(agentlinkDir, "config.toml")
-	if err := writeConfigTOML(configPath, opts.Server, device, absPath, opts.Agent); err != nil {
+	if err := writeConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll); err != nil {
 		return fmt.Errorf("cannot write config: %w", err)
 	}
 
@@ -121,14 +121,6 @@ func RunInit(opts *InitOptions) error {
 		}
 	}
 
-	// Update config with poll settings
-	if opts.NoPoll {
-		configPath := filepath.Join(agentlinkDir, "config.toml")
-		data, _ := os.ReadFile(configPath)
-		pollConfig := "\n[poll]\nenabled = false\ninterval = 5\n"
-		os.WriteFile(configPath, []byte(string(data)+pollConfig), 0600)
-	}
-
 	// Print success
 	fmt.Printf("✓ Agent team initialized at %s\n", absPath)
 	fmt.Printf("✓ Device %q registered (sessions: %s)\n", device, strings.Join(regResp.Sessions, ", "))
@@ -139,12 +131,20 @@ func RunInit(opts *InitOptions) error {
 	return nil
 }
 
-func writeConfigTOML(path, server, device, baseDir, agent string) error {
+func writeConfigTOML(path, server, device, baseDir, agent string, noPoll bool) error {
+	pollVal := "true"
+	if noPoll {
+		pollVal = "false"
+	}
 	content := fmt.Sprintf(`server = %q
 device = %q
 base_dir = %q
 agent = %q
-`, server, device, baseDir, agent)
+
+[poll]
+enabled = %s
+interval = 5
+`, server, device, baseDir, agent, pollVal)
 	return os.WriteFile(path, []byte(content), 0600)
 }
 
@@ -188,4 +188,3 @@ func registerDevice(server, device, password string) (*registerResponse, error) 
 	}
 	return &regResp, nil
 }
-

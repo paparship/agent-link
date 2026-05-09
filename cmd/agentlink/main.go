@@ -121,11 +121,10 @@ func cmdInit(args []string) {
 		}
 	}
 
+	fmt.Println("✓ tmux sessions created: main, worker")
 	if *noPoll {
-		fmt.Println("✓ tmux sessions created: main, worker")
 		fmt.Println("  Auto-polling disabled (use agentlink poll to start manually)")
 	} else {
-		fmt.Println("✓ tmux sessions created: main, worker")
 		fmt.Println("✓ poller sessions created: main-poller, worker-poller")
 	}
 	fmt.Println()

@@ -100,7 +100,9 @@ func (p *Poller) pullOne() (*pollerInboxItem, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		var e struct{ Error string `json:"error"` }
+		var e struct {
+			Error string `json:"error"`
+		}
 		if json.Unmarshal(body, &e) == nil && e.Error != "" {
 			return nil, fmt.Errorf("server %d: %s", resp.StatusCode, e.Error)
 		}
@@ -205,15 +207,15 @@ func RunPoll() error {
 
 	interval := cfg.Poll.Interval
 	if interval <= 0 {
-		interval = 5
+		interval = defaultPollInterval
 	}
 
 	p := &Poller{
-		Session:  session,
-		Server:   cfg.Server,
-		APIKey:   creds.APIKey,
-		Interval: time.Duration(interval) * time.Second,
-		Stdout:   os.Stdout,
+		Session:      session,
+		Server:       cfg.Server,
+		APIKey:       creds.APIKey,
+		Interval:     time.Duration(interval) * time.Second,
+		Stdout:       os.Stdout,
 		IdleDetector: adapter.NewDetector(cfg.Agent),
 	}
 	return p.Run()

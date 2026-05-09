@@ -219,7 +219,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude")
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
 
 		err := RunPoll()
 		if err == nil {
@@ -234,7 +234,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude")
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)

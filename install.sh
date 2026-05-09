@@ -21,7 +21,6 @@ case "$ARCH" in
 esac
 
 # --- download URL ---
-# Try latest release first, fall back to tagged version
 VERSION="${VERSION:-latest}"
 if [ "$VERSION" = "latest" ]; then
   DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/${BINARY}-${OS}-${ARCH}"
@@ -38,13 +37,24 @@ else
   BINDIR="/usr/local/bin"
 fi
 
+# --- check download tool ---
+if command -v curl >/dev/null 2>&1; then
+  DL_CMD="curl -sfL"
+elif command -v wget >/dev/null 2>&1; then
+  DL_CMD="wget -qO-"
+else
+  echo "error: need curl or wget to download"
+  exit 1
+fi
+
 # --- download ---
 echo "Downloading agentlink for ${OS}-${ARCH}..."
-tmpfile="$(mktemp)"
+tmpfile="$(mktemp /tmp/agentlink.XXXXXXXX)"
 trap 'rm -f "$tmpfile"' EXIT
 
-if ! curl -sfL "$DOWNLOAD_URL" -o "$tmpfile"; then
-  echo "error: download failed from $DOWNLOAD_URL"
+if ! $DL_CMD "$DOWNLOAD_URL" > "$tmpfile"; then
+  echo "error: download failed (check network connectivity and URL)"
+  echo "  $DOWNLOAD_URL"
   exit 1
 fi
 
@@ -53,6 +63,11 @@ chmod +x "$tmpfile"
 # --- install ---
 if [ ! -w "$BINDIR" ]; then
   echo "Installing to $BINDIR requires sudo..."
+  if ! sudo -n true 2>/dev/null; then
+    echo "  sudo access required. You can also install manually:"
+    echo "  cp $tmpfile $BINDIR/$BINARY"
+    exit 1
+  fi
   sudo mv "$tmpfile" "$BINDIR/$BINARY"
 else
   mv "$tmpfile" "$BINDIR/$BINARY"

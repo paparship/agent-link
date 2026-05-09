@@ -26,6 +26,7 @@ reinstall: uninstall install
 
 clean:
 	rm -f agentlink server
+	rm -rf bin
 
 test:
 	$(GO) test ./... -count=1

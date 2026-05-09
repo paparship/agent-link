@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const defaultPollInterval = 5
+
 type PollConfig struct {
 	Enabled  bool
 	Interval int
@@ -95,7 +97,6 @@ func findCurrentSession() (string, error) {
 }
 
 func readTOML(content, key string) string {
-	// Handle section.key notation (e.g. "poll.enabled")
 	var section string
 	var lookupKey string
 	if idx := strings.Index(key, "."); idx >= 0 {
@@ -109,9 +110,9 @@ func readTOML(content, key string) string {
 	inSection := section == ""
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		// Track section headers
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			inSection = section != "" && strings.TrimSuffix(strings.TrimPrefix(line, "["), "]") == section
+			trimmed := strings.TrimSuffix(strings.TrimPrefix(line, "["), "]")
+			inSection = section != "" && trimmed == section
 			continue
 		}
 		if !inSection {
