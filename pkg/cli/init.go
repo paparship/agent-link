@@ -20,6 +20,7 @@ type InitOptions struct {
 	Path     string
 	Agent    string
 	NoPoll   bool
+	Force    bool
 }
 
 type registerRequest struct {
@@ -66,7 +67,9 @@ func RunInit(opts *InitOptions) error {
 	}
 
 	if _, err := os.Stat(absPath); err == nil {
-		return fmt.Errorf("directory %q already exists", absPath)
+		if !opts.Force {
+			return fmt.Errorf("directory %q already exists; use --force to override", absPath)
+		}
 	}
 
 	// Create directories
