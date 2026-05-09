@@ -161,7 +161,7 @@ func TestRegister(t *testing.T) {
 		}
 	})
 
-	t.Run("duplicate device", func(t *testing.T) {
+	t.Run("duplicate device reuse", func(t *testing.T) {
 		body := `{"device":"reg-test","sessions":["main"],"register_password":"test-password"}`
 		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
 		if err != nil {
@@ -169,8 +169,27 @@ func TestRegister(t *testing.T) {
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode != http.StatusConflict {
-			t.Errorf("expected 409, got %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200 (reuse), got %d", resp.StatusCode)
+		}
+
+		var rr RegisterResponse
+		json.NewDecoder(resp.Body).Decode(&rr)
+		if rr.APIKey == "" {
+			t.Error("expected api_key in response")
+		}
+	})
+
+	t.Run("duplicate device wrong password", func(t *testing.T) {
+		body := `{"device":"reg-test","sessions":["main"],"register_password":"wrong"}`
+		resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401 for wrong password, got %d", resp.StatusCode)
 		}
 	})
 }
