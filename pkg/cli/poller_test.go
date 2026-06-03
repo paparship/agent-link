@@ -66,8 +66,9 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 	}
 
 	p.Run()
-	if injected != msgContent {
-		t.Errorf("expected injected=%q, got %q", msgContent, injected)
+	expected := "[来自 dev-a:main 的消息] " + msgContent
+	if injected != expected {
+		t.Errorf("expected injected=%q, got %q", expected, injected)
 	}
 }
 

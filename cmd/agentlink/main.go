@@ -35,6 +35,8 @@ func main() {
 		cmdList(os.Args[2:])
 	case "session":
 		cmdSession(os.Args[2:])
+	case "message":
+		cmdMessage(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
 	case "uninstall":
@@ -51,17 +53,18 @@ func printUsage() {
 
 Usage:
   agentlink init --server <url> --password <pw> [--device <name>] [./path]
-  agentlink send <target> <content>
+  agentlink send [--interrupt] <target> <content>
   agentlink pull [--all]
   agentlink ping
   agentlink list [--all]
   agentlink poll
-  agentlink task send <target> <task_id> <content>
+  agentlink task send [--interrupt] <target> <task_id> <content>
   agentlink task result <task_id> <status> <result>
   agentlink task resume <task_id> <guidance>
   agentlink task cancel <task_id>
   agentlink task status <task_id>
   agentlink task list
+  agentlink message status <id>
   agentlink session add|remove <name>
   agentlink attach <session>
   agentlink uninstall
@@ -144,14 +147,19 @@ func cmdInit(args []string) {
 }
 
 func cmdSend(args []string) {
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink send <target> <content>")
+	fs := flag.NewFlagSet("send", flag.ExitOnError)
+	interrupt := fs.Bool("interrupt", false, "Interrupt the target if busy")
+	fs.Parse(args)
+
+	rest := fs.Args()
+	if len(rest) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink send [--interrupt] <target> <content>")
 		os.Exit(1)
 	}
-	target := args[0]
-	content := strings.Join(args[1:], " ")
+	target := rest[0]
+	content := strings.Join(rest[1:], " ")
 
-	if err := cli.RunSend(target, content); err != nil {
+	if err := cli.RunSend(target, content, *interrupt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -193,6 +201,27 @@ func cmdList(args []string) {
 	}
 }
 
+func cmdMessage(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink message status <id>")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "status":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: agentlink message status <id>")
+			os.Exit(1)
+		}
+		if err := cli.RunMessageStatus(args[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown message subcommand: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
 func cmdTask(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: agentlink task <subcommand> [args]")
@@ -209,6 +238,8 @@ func cmdTask(args []string) {
 		cmdTaskCancel(args[1:])
 	case "status":
 		cmdTaskStatus(args[1:])
+	case "list":
+		cmdTaskList()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown task subcommand: %s\n", args[0])
 		os.Exit(1)
@@ -216,25 +247,28 @@ func cmdTask(args []string) {
 }
 
 func cmdTaskSend(args []string) {
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink task send <target> [<task_id>] <content>")
-		fmt.Fprintln(os.Stderr, "  with task_id: agentlink task send worker my-id \"do something\"")
-		fmt.Fprintln(os.Stderr, "  without:      agentlink task send worker \"do something\"")
+	fs := flag.NewFlagSet("send", flag.ExitOnError)
+	interrupt := fs.Bool("interrupt", false, "Interrupt the target if busy")
+	fs.Parse(args)
+
+	rest := fs.Args()
+	if len(rest) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink task send [--interrupt] <target> [<task_id>] <content>")
+		fmt.Fprintln(os.Stderr, "  with task_id: agentlink task send --interrupt worker my-id \"do something\"")
+		fmt.Fprintln(os.Stderr, "  without:      agentlink task send --interrupt worker \"do something\"")
 		os.Exit(1)
 	}
-	target := args[0]
+	target := rest[0]
 	var taskID string
 	var content string
-	if len(args) == 2 {
-		// 2-arg form: target + content, server generates task_id
-		content = args[1]
+	if len(rest) == 2 {
+		content = rest[1]
 	} else {
-		// 3+ arg form: target + task_id + content
-		taskID = args[1]
-		content = strings.Join(args[2:], " ")
+		taskID = rest[1]
+		content = strings.Join(rest[2:], " ")
 	}
 
-	if err := cli.RunTaskSend(target, taskID, content); err != nil {
+	if err := cli.RunTaskSend(target, taskID, content, *interrupt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

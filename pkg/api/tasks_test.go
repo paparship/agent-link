@@ -157,10 +157,16 @@ func TestTasks(t *testing.T) {
 		if resp.StatusCode != http.StatusConflict {
 			t.Errorf("expected 409 for in_progress busy, got %d", resp.StatusCode)
 		}
-		var errResp map[string]string
+		var errResp struct {
+			Error           string `json:"error"`
+			RecipientStatus any    `json:"recipient_status"`
+		}
 		json.NewDecoder(resp.Body).Decode(&errResp)
-		if !strings.Contains(errResp["error"], "in_progress") {
-			t.Errorf("expected in_progress error, got: %s", errResp["error"])
+		if !strings.Contains(errResp.Error, "busy") {
+			t.Errorf("expected busy error, got: %s", errResp.Error)
+		}
+		if errResp.RecipientStatus == nil {
+			t.Error("expected recipient_status in 409 response")
 		}
 	})
 

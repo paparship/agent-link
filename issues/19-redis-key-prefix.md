@@ -1,4 +1,4 @@
-# 20 — Redis key 添加 `agentlink:` 命名空间前缀
+# 19 — Redis key 添加 `agentlink:` 命名空间前缀
 
 Type: AFK
 Blocked by: #18

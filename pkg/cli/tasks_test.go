@@ -71,7 +71,7 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunTaskSend("worker", "001", "fix login bug"); err != nil {
+		if err := RunTaskSend("worker", "001", "fix login bug", false); err != nil {
 			t.Fatal(err)
 		}
 
@@ -105,7 +105,7 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunTaskSend("other-dev:reviewer", "002", "review code"); err != nil {
+		if err := RunTaskSend("other-dev:reviewer", "002", "review code", false); err != nil {
 			t.Fatal(err)
 		}
 
@@ -134,7 +134,7 @@ func TestRunTaskSend(t *testing.T) {
 		defer os.Chdir(origWd)
 
 		content := "fix the login bug and add tests"
-		if err := RunTaskSend("worker", "003", content); err != nil {
+		if err := RunTaskSend("worker", "003", content, false); err != nil {
 			t.Fatal(err)
 		}
 		if captured.content != content {
@@ -142,10 +142,18 @@ func TestRunTaskSend(t *testing.T) {
 		}
 	})
 
-	t.Run("send server 409", func(t *testing.T) {
+	t.Run("send server 409 shows message", func(t *testing.T) {
 		mockSrv409 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusConflict)
-			json.NewEncoder(w).Encode(map[string]string{"error": "target has an in_progress task"})
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": "target session is busy",
+				"recipient_status": map[string]any{
+					"device":       "worker-dev",
+					"session":      "main",
+					"status":       "busy",
+					"current_task": "deploy-042",
+				},
+			})
 		}))
 		defer mockSrv409.Close()
 
@@ -154,12 +162,9 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		err := RunTaskSend("worker", "001", "test")
-		if err == nil {
-			t.Fatal("expected error")
-		}
-		if !strings.Contains(err.Error(), "409") || !strings.Contains(err.Error(), "in_progress") {
-			t.Errorf("expected 409 error, got: %s", err)
+		err := RunTaskSend("worker", "001", "test", false)
+		if err != nil {
+			t.Errorf("expected no error for 409 with status, got: %s", err)
 		}
 	})
 }
@@ -169,7 +174,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunTaskSend("worker", "001", "hi")
+		err := RunTaskSend("worker", "001", "hi", false)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -184,7 +189,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
 		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
 
-		err := RunTaskSend("worker", "001", "hi")
+		err := RunTaskSend("worker", "001", "hi", false)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -202,7 +207,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
 
-		err := RunTaskSend("worker", "001", "hi")
+		err := RunTaskSend("worker", "001", "hi", false)
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -522,5 +527,3 @@ func TestRunTaskList(t *testing.T) {
 		}
 	})
 }
-
-

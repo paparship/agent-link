@@ -119,7 +119,7 @@ func RunInit(opts *InitOptions) error {
 			return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 		}
 		claudePath := filepath.Join(sessionDir, "CLAUDE.md")
-		if err := os.WriteFile(claudePath, []byte(launcher.InitTemplate(session)), 0600); err != nil {
+		if err := os.WriteFile(claudePath, []byte(launcher.InitTemplate(session, device)), 0600); err != nil {
 			return fmt.Errorf("cannot write %s: %w", claudePath, err)
 		}
 	}
