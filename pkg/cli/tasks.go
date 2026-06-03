@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 )
 
-func RunTaskSend(target, taskID, content string) error {
+func RunTaskSend(target, taskID, content string, interrupt bool) error {
 	cfg, creds, err := loadAuth()
 	if err != nil {
 		return err
@@ -21,27 +24,62 @@ func RunTaskSend(target, taskID, content string) error {
 		target = cfg.Device + ":" + target
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/tasks/send", map[string]string{
+	body, _ := json.Marshal(map[string]any{
 		"to":           target,
 		"from_session": session,
 		"task_id":      taskID,
 		"content":      content,
+		"interrupt":     interrupt,
 	})
+
+	req, err := http.NewRequest("POST", cfg.Server+"/tasks/send", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+creds.APIKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("cannot connect to server %s: %w", cfg.Server, err)
 	}
 	defer resp.Body.Close()
 
-	var sendResp struct {
-		ID     string `json:"id"`
-		TaskID string `json:"task_id,omitempty"`
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusConflict {
+		var errResp struct {
+			Error           string               `json:"error"`
+			RecipientStatus *recipientStatusJSON `json:"recipient_status,omitempty"`
+		}
+		json.Unmarshal(respBody, &errResp)
+
+		fmt.Printf("✗ %s\n", errResp.Error)
+		displayRecipientStatus(errResp.RecipientStatus)
+		return nil
 	}
-	json.NewDecoder(resp.Body).Decode(&sendResp)
+
+	if resp.StatusCode != http.StatusOK {
+		var e struct{ Error string `json:"error"` }
+		if json.Unmarshal(respBody, &e) == nil && e.Error != "" {
+			return fmt.Errorf("server returned %d: %s", resp.StatusCode, e.Error)
+		}
+		return fmt.Errorf("server returned %d", resp.StatusCode)
+	}
+
+	var sendResp struct {
+		ID              string               `json:"id"`
+		TaskID          string               `json:"task_id,omitempty"`
+		RecipientStatus *recipientStatusJSON `json:"recipient_status,omitempty"`
+	}
+	json.Unmarshal(respBody, &sendResp)
 	if sendResp.TaskID != "" {
 		taskID = sendResp.TaskID
 	}
 
 	fmt.Printf("✓ Task %s sent to %s\n", taskID, target)
+	displayRecipientStatus(sendResp.RecipientStatus)
+
 	return nil
 }
 

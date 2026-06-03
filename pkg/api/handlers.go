@@ -168,6 +168,7 @@ type Message struct {
 	FromDevice  string `json:"from_device"`
 	FromSession string `json:"from_session"`
 	TaskID      string `json:"task_id,omitempty"`
+	Interrupt   bool   `json:"interrupt,omitempty"`
 	Content     string `json:"content"`
 	CreatedAt   string `json:"created_at"`
 }
@@ -175,12 +176,24 @@ type Message struct {
 type SendRequest struct {
 	To          string `json:"to"`
 	FromSession string `json:"from_session"`
+	Interrupt   bool   `json:"interrupt,omitempty"`
 	Content     string `json:"content"`
 }
 
 type SendResponse struct {
-	ID     string `json:"id"`
-	TaskID string `json:"task_id,omitempty"`
+	ID              string           `json:"id"`
+	TaskID          string           `json:"task_id,omitempty"`
+	RecipientStatus *RecipientStatus `json:"recipient_status,omitempty"`
+}
+
+type RecipientStatus struct {
+	Device       string `json:"device"`
+	Session      string `json:"session"`
+	Status       string `json:"status"` // "idle" / "busy" / "offline"
+	CurrentTask  string `json:"current_task,omitempty"`
+	TaskDuration string `json:"task_duration,omitempty"`
+	InboxDepth   int    `json:"inbox_depth"`
+	LastSeen     string `json:"last_seen,omitempty"`
 }
 
 type PullResponse struct {
@@ -191,6 +204,7 @@ type SendTaskRequest struct {
 	To          string `json:"to"`
 	FromSession string `json:"from_session"`
 	TaskID      string `json:"task_id,omitempty"`
+	Interrupt   bool   `json:"interrupt,omitempty"`
 	Content     string `json:"content"`
 }
 
@@ -294,6 +308,62 @@ func (s *Server) getAgentInfo(ctx context.Context, device string) AgentInfo {
 		LastSeen: lastSeen,
 		Online:   online,
 	}
+}
+
+func (s *Server) buildRecipientStatus(ctx context.Context, device, session string) RecipientStatus {
+	rs := RecipientStatus{Device: device, Session: session}
+
+	deviceKey := "agentlink:device:" + device
+	exists, err := s.rdb.Exists(ctx, deviceKey).Result()
+	if err != nil || exists == 0 {
+		rs.Status = "offline"
+		return rs
+	}
+
+	lastSeen, _ := s.rdb.HGet(ctx, deviceKey, "last_seen").Result()
+	rs.LastSeen = lastSeen
+
+	online := false
+	if lastSeen != "" {
+		t, err := time.Parse(time.RFC3339, lastSeen)
+		if err == nil {
+			online = time.Since(t) < 120*time.Second
+		}
+	}
+
+	inboxKey := "agentlink:inbox:" + device + ":" + session
+	depth, _ := s.rdb.LLen(ctx, inboxKey).Result()
+	rs.InboxDepth = int(depth)
+
+	trackingKey := "agentlink:tasks:" + device + ":" + session
+	members, _ := s.rdb.SMembers(ctx, trackingKey).Result()
+	for _, tid := range members {
+		status, _ := s.rdb.HGet(ctx, "agentlink:task:"+tid, "status").Result()
+		if status == "in_progress" {
+			rs.Status = "busy"
+			rs.CurrentTask = tid
+			issuedAt, _ := s.rdb.HGet(ctx, "agentlink:task:"+tid, "issued_at").Result()
+			if issuedAt != "" {
+				t, err := time.Parse(time.RFC3339, issuedAt)
+				if err == nil {
+					d := time.Since(t)
+					if d < time.Minute {
+						rs.TaskDuration = fmt.Sprintf("%ds", int(d.Seconds()))
+					} else {
+						rs.TaskDuration = fmt.Sprintf("%dm", int(d.Minutes()))
+					}
+				}
+			}
+			return rs
+		}
+	}
+
+	if !online {
+		rs.Status = "offline"
+	} else {
+		rs.Status = "idle"
+	}
+	return rs
 }
 
 type PatchSessionsRequest struct {
@@ -486,6 +556,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		Type:        "msg",
 		FromDevice:  fromDevice,
 		FromSession: req.FromSession,
+		Interrupt:   req.Interrupt,
 		Content:     req.Content,
 		CreatedAt:   now,
 	}
@@ -496,8 +567,22 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.rdb.Expire(r.Context(), inboxKey, 7*24*time.Hour)
 
-	writeJSON(w, http.StatusOK, SendResponse{ID: id})
+	msgKey := "agentlink:msg:" + id
+	s.rdb.HSet(r.Context(), msgKey,
+		"from_device", fromDevice,
+		"from_session", req.FromSession,
+		"to_device", targetDevice,
+		"to_session", targetSession,
+		"content", req.Content,
+		"type", "msg",
+		"sent_at", now,
+	)
+	s.rdb.Expire(r.Context(), msgKey, 7*24*time.Hour)
+
+	status := s.buildRecipientStatus(r.Context(), targetDevice, targetSession)
+	writeJSON(w, http.StatusOK, SendResponse{ID: id, RecipientStatus: &status})
 }
 
 func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
@@ -532,6 +617,7 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
 	inboxKey := "agentlink:inbox:" + device + ":" + session
 	items := make([]Message, 0)
 
@@ -546,6 +632,14 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		}
 		var msg Message
 		json.Unmarshal([]byte(data), &msg)
+
+		// Update msg record delivered_at
+		if msg.ID != "" {
+			msgKey := "agentlink:msg:" + msg.ID
+			s.rdb.HSet(r.Context(), msgKey, "delivered_at", now)
+			s.rdb.Expire(r.Context(), msgKey, 24*time.Hour)
+		}
+
 		// Auto-set task to in_progress on pull
 		if msg.Type == "task" && msg.TaskID != "" {
 			taskKey := "agentlink:task:" + msg.TaskID
@@ -669,11 +763,19 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if inProgress {
-		writeError(w, http.StatusConflict, "target has an in_progress task")
+		status := s.buildRecipientStatus(r.Context(), targetDevice, targetSession)
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":            "target session is busy",
+			"recipient_status": &status,
+		})
 		return
 	}
 	if suspendedCount >= 2 {
-		writeError(w, http.StatusConflict, "target has 2 suspended tasks")
+		status := s.buildRecipientStatus(r.Context(), targetDevice, targetSession)
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":            "target has 2 suspended tasks",
+			"recipient_status": &status,
+		})
 		return
 	}
 
@@ -703,6 +805,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		FromDevice:  fromDevice,
 		FromSession: req.FromSession,
 		TaskID:      req.TaskID,
+		Interrupt:   req.Interrupt,
 		Content:     req.Content,
 		CreatedAt:   now,
 	}
@@ -712,8 +815,23 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	s.rdb.Expire(r.Context(), inboxKey, 7*24*time.Hour)
 
-	writeJSON(w, http.StatusOK, SendResponse{ID: id, TaskID: req.TaskID})
+	msgKey := "agentlink:msg:" + id
+	s.rdb.HSet(r.Context(), msgKey,
+		"from_device", fromDevice,
+		"from_session", req.FromSession,
+		"to_device", targetDevice,
+		"to_session", targetSession,
+		"content", req.Content,
+		"type", "task",
+		"task_id", req.TaskID,
+		"sent_at", now,
+	)
+	s.rdb.Expire(r.Context(), msgKey, 7*24*time.Hour)
+
+	status := s.buildRecipientStatus(r.Context(), targetDevice, targetSession)
+	writeJSON(w, http.StatusOK, SendResponse{ID: id, TaskID: req.TaskID, RecipientStatus: &status})
 }
 
 func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
@@ -770,6 +888,7 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.rdb.Expire(r.Context(), taskKey, 30*24*time.Hour)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -906,6 +1025,7 @@ func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	s.rdb.Expire(r.Context(), taskKey, 30*24*time.Hour)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -980,6 +1100,47 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+}
+
+func (s *Server) handleMsgStatus(w http.ResponseWriter, r *http.Request) {
+	msgID := r.URL.Query().Get("id")
+	if msgID == "" {
+		writeError(w, http.StatusBadRequest, "missing id parameter")
+		return
+	}
+
+	msgKey := "agentlink:msg:" + msgID
+	data, err := s.rdb.HGetAll(r.Context(), msgKey).Result()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if len(data) == 0 {
+		writeError(w, http.StatusNotFound, "message not found or expired")
+		return
+	}
+
+	result := map[string]string{
+		"id":           msgID,
+		"from_device":  data["from_device"],
+		"from_session": data["from_session"],
+		"to_device":    data["to_device"],
+		"to_session":   data["to_session"],
+		"content":      data["content"],
+		"type":         data["type"],
+		"sent_at":      data["sent_at"],
+	}
+	if data["task_id"] != "" {
+		result["task_id"] = data["task_id"]
+	}
+	if data["delivered_at"] != "" {
+		result["delivered_at"] = data["delivered_at"]
+		result["status"] = "delivered"
+	} else {
+		result["status"] = "pending"
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func generateID() string {

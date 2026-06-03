@@ -59,7 +59,7 @@ func RunSessionAdd(name string) error {
 	// Write CLAUDE.md
 	claudePath := filepath.Join(sessionDir, "CLAUDE.md")
 	launcher := adapter.NewLauncher(cfg.Agent)
-	claudeContent := launcher.InitTemplate(name)
+	claudeContent := launcher.InitTemplate(name, cfg.Device)
 	if err := os.WriteFile(claudePath, []byte(claudeContent), 0600); err != nil {
 		return fmt.Errorf("cannot write %s: %w", claudePath, err)
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/team/agentlink/pkg/adapter"
@@ -40,9 +41,16 @@ type Poller struct {
 
 func (p *Poller) Run() error {
 	p.initDefaults()
+	lastHeartbeat := time.Now()
 	for {
 		if err := p.ctx().Err(); err != nil {
 			return err
+		}
+
+		// Heartbeat every ~12 iterations (60s with 5s interval)
+		if time.Since(lastHeartbeat) > 60*time.Second {
+			lastHeartbeat = time.Now()
+			p.heartbeat()
 		}
 
 		msg, err := p.pullOne()
@@ -54,19 +62,49 @@ func (p *Poller) Run() error {
 
 		if msg != nil {
 			fmt.Fprintf(p.Stdout, "message from %s:%s\n", msg.FromDevice, msg.FromSession)
-			p.waitForIdle()
+			if msg.Interrupt {
+				fmt.Fprintf(p.Stdout, "interrupt: sending Ctrl+C\n")
+				p.sendKeys(p.Session, "C-c")
+				time.Sleep(3 * time.Second)
+			} else {
+				p.waitForIdle()
+			}
 
 			pane, err := p.capturePane(p.Session)
 			if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
-				fmt.Fprintf(p.Stdout, "inject: %s\n", msg.Content)
-				if err := p.sendKeys(p.Session, msg.Content); err != nil {
+				injectContent := msg.Content
+				if msg.Type == "msg" {
+					prefix := fmt.Sprintf("[来自 %s:%s 的消息] ", msg.FromDevice, msg.FromSession)
+					injectContent = prefix + msg.Content
+				}
+				fmt.Fprintf(p.Stdout, "inject: %s\n", injectContent)
+				if err := p.sendKeys(p.Session, injectContent); err != nil {
 					fmt.Fprintf(p.Stdout, "send-keys error: %s\n", err)
 				}
 			}
 		}
 
+		pane, _ := p.capturePane(p.Session)
+		if pane != "" && (strings.Contains(pane, "Do you trust") || strings.Contains(pane, "trust this folder")) {
+			fmt.Fprintf(p.Stdout, "auto-accept trust prompt\n")
+			p.sendKeys(p.Session, "1")
+		}
+
 		p.sleep(p.Interval)
 	}
+}
+
+func (p *Poller) heartbeat() {
+	req, err := http.NewRequestWithContext(p.ctx(), "POST", p.Server+"/agents/heartbeat", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	resp, err := p.httpDo(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 // -- internal --
@@ -78,6 +116,7 @@ type pollerInboxItem struct {
 	FromDevice  string `json:"from_device"`
 	FromSession string `json:"from_session"`
 	TaskID      string `json:"task_id,omitempty"`
+	Interrupt   bool   `json:"interrupt,omitempty"`
 }
 
 type pollerPullResponse struct {
@@ -126,8 +165,15 @@ func (p *Poller) waitForIdle() {
 			return
 		}
 		pane, err := p.capturePane(p.Session)
-		if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
+		if err != nil {
+			continue
+		}
+		if !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
 			return
+		}
+		if strings.Contains(pane, "Do you trust") || strings.Contains(pane, "trust this folder") {
+			fmt.Fprintf(p.Stdout, "auto-accept trust prompt\n")
+			p.sendKeys(p.Session, "1")
 		}
 		select {
 		case <-p.ctx().Done():
@@ -183,8 +229,13 @@ var tmuxCapturePane = func(session string) (string, error) {
 }
 
 var tmuxSendKeys = func(session, text string) error {
-	cmd := exec.Command("tmux", "send-keys", "-t", session, text, "Enter")
-	return cmd.Run()
+	cmd1 := exec.Command("tmux", "send-keys", "-l", "-t", session, text)
+	if err := cmd1.Run(); err != nil {
+		return err
+	}
+	time.Sleep(50 * time.Millisecond)
+	cmd2 := exec.Command("tmux", "send-keys", "-t", session, "Enter")
+	return cmd2.Run()
 }
 
 // -- entry point --

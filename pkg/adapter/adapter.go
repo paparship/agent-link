@@ -17,9 +17,9 @@ type AgentLauncher interface {
 	// (e.g. the agent binary in PATH), returning an error if not.
 	CheckPrereqs() error
 
-	// InitTemplate returns the CLAUDE.md content for a given session name.
+	// InitTemplate returns the CLAUDE.md content for a given session and device.
 	// agentlink writes this file into each session directory during init.
-	InitTemplate(session string) string
+	InitTemplate(session string, device string) string
 }
 
 // IdleDetector checks whether the agent's tmux pane is ready for input.
