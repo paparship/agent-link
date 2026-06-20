@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
-	"github.com/team/agentlink/pkg/adapter"
 	"github.com/team/agentlink/pkg/cli"
 )
 
@@ -39,6 +37,8 @@ func main() {
 		cmdMessage(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
+	case "resume":
+		cmdResume(os.Args[2:])
 	case "uninstall":
 		cmdUninstall()
 	default:
@@ -67,6 +67,7 @@ Usage:
   agentlink message status <id>
   agentlink session add|remove <name>
   agentlink attach <session>
+  agentlink resume
   agentlink uninstall
 `)
 }
@@ -106,33 +107,6 @@ func cmdInit(args []string) {
 		os.Exit(1)
 	}
 
-	// Create background tmux sessions
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1)
-	}
-
-	selfExe, _ := os.Executable()
-	launcher := adapter.NewLauncher(*agent)
-	for _, session := range []string{"main", "worker"} {
-		exec.Command("tmux", "kill-session", "-t", session).Run()
-		exec.Command("tmux", "kill-session", "-t", session+"-poller").Run()
-		dir := filepath.Join(absPath, session)
-		name, args := launcher.Command()
-		cmdArgs := append([]string{"new-session", "-d", "-s", session, "-c", dir, name}, args...)
-		exec.Command("tmux", cmdArgs...).Run()
-		if !*noPoll {
-			exec.Command("tmux", "new-session", "-d", "-s", session+"-poller", "-c", dir, selfExe, "poll").Run()
-		}
-	}
-
-	fmt.Println("✓ tmux sessions created: main, worker")
-	if *noPoll {
-		fmt.Println("  Auto-polling disabled (use agentlink poll to start manually)")
-	} else {
-		fmt.Println("✓ poller sessions created: main-poller, worker-poller")
-	}
 	fmt.Println()
 	fmt.Println("Attaching to main session...")
 
@@ -363,6 +337,13 @@ func cmdAttach(args []string) {
 	}
 	session := args[0]
 	if err := cli.RunAttach(session); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func cmdResume(args []string) {
+	if err := cli.RunResume(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

@@ -29,7 +29,7 @@ func RunTaskSend(target, taskID, content string, interrupt bool) error {
 		"from_session": session,
 		"task_id":      taskID,
 		"content":      content,
-		"interrupt":     interrupt,
+		"interrupt":    interrupt,
 	})
 
 	req, err := http.NewRequest("POST", cfg.Server+"/tasks/send", bytes.NewReader(body))
@@ -60,7 +60,9 @@ func RunTaskSend(target, taskID, content string, interrupt bool) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		var e struct{ Error string `json:"error"` }
+		var e struct {
+			Error string `json:"error"`
+		}
 		if json.Unmarshal(respBody, &e) == nil && e.Error != "" {
 			return fmt.Errorf("server returned %d: %s", resp.StatusCode, e.Error)
 		}
@@ -143,7 +145,6 @@ func RunTaskCancel(taskID string) error {
 	fmt.Printf("✓ Task %s cancelled\n", taskID)
 	return nil
 }
-
 
 func RunTaskList() error {
 	cfg, creds, err := loadAuth()

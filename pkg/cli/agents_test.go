@@ -68,9 +68,9 @@ func TestRunPing(t *testing.T) {
 func TestRunList(t *testing.T) {
 	makeAgent := func(device string, sessions []string, online bool, lastSeen string) map[string]any {
 		return map[string]any{
-			"device":   device,
-			"sessions": sessions,
-			"online":   online,
+			"device":    device,
+			"sessions":  sessions,
+			"online":    online,
 			"last_seen": lastSeen,
 		}
 	}
@@ -224,7 +224,7 @@ func TestRunPingList_errors(t *testing.T) {
 		os.MkdirAll(fmt.Sprintf("%s/.agentlink", homeDir), 0755)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		defer srv.Close()
-		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude", false)
+		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude", false, nil)
 
 		err := RunPing()
 		if err == nil {
@@ -241,7 +241,7 @@ func TestRunPingList_errors(t *testing.T) {
 		os.MkdirAll(fmt.Sprintf("%s/.agentlink", homeDir), 0755)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 		defer srv.Close()
-		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude", false)
+		writeConfigTOML(fmt.Sprintf("%s/.agentlink/config.toml", homeDir), srv.URL, "test-dev", homeDir, "claude", false, nil)
 
 		err := RunList(false)
 		if err == nil {

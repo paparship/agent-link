@@ -13,6 +13,11 @@ type AgentLauncher interface {
 	// The caller uses them with exec.Command(name, args...).
 	Command() (name string, args []string)
 
+	// ResumeArgs returns the arguments used to resume a prior session.
+	// When sessionID is empty, returns args for a "continue last session"
+	// fallback (used for configs created before session_id recording).
+	ResumeArgs(sessionID string) []string
+
 	// CheckPrereqs verifies the host environment has everything the agent needs
 	// (e.g. the agent binary in PATH), returning an error if not.
 	CheckPrereqs() error

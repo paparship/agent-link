@@ -21,7 +21,7 @@ func setupAgentEnv(t *testing.T, serverURL string) string {
 	// ~/.agentlink/config.toml
 	agentlinkDir := filepath.Join(homeDir, ".agentlink")
 	os.MkdirAll(agentlinkDir, 0755)
-	writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false)
+	writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false, nil)
 
 	// ~/.agentlink/credentials.json
 	creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
@@ -155,7 +155,7 @@ func TestRunSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
 		err := RunSend("worker", "hi", false)
 		if err == nil {
@@ -170,7 +170,7 @@ func TestRunSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
@@ -377,7 +377,7 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-	writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://srv:8080", "test-dev", "/tmp", "claude", false)
+	writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://srv:8080", "test-dev", "/tmp", "claude", false, nil)
 
 	cfg, err := loadConfig()
 	if err != nil {

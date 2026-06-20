@@ -64,6 +64,25 @@ func RunSessionAdd(name string) error {
 		return fmt.Errorf("cannot write %s: %w", claudePath, err)
 	}
 
+	// Launch tmux session and record Claude session_id
+	sessions, err := launchSessions(cfg.BaseDir, cfg.Agent, launchOpts{
+		Resume:   false,
+		NoPoll:   !cfg.Poll.Enabled,
+		Existing: nil,
+		Only:     name,
+	})
+	if err != nil {
+		return fmt.Errorf("cannot launch session: %w", err)
+	}
+
+	// Update config.toml [sessions] with the new session_id
+	configPath := filepath.Join(os.Getenv("HOME"), ".agentlink", "config.toml")
+	if sid, ok := sessions[name]; ok && sid != "" {
+		if err := updateSessionID(configPath, name, sid); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not record session_id: %v\n", err)
+		}
+	}
+
 	fmt.Printf("✓ Session %q added\n", name)
 	fmt.Printf("  Directory: %s\n", sessionDir)
 	fmt.Println()
