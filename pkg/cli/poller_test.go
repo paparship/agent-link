@@ -44,12 +44,12 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p := &Poller{
-		Session:  "worker",
-		Server:   mockSrv.URL,
-		APIKey:   "sk_test",
-		Interval: 10 * time.Millisecond,
-		Ctx:      ctx,
-		Stdout:   io.Discard,
+		Session:      "worker",
+		Server:       mockSrv.URL,
+		APIKey:       "sk_test",
+		Interval:     10 * time.Millisecond,
+		Ctx:          ctx,
+		Stdout:       io.Discard,
 		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			captureCalls++
@@ -87,12 +87,12 @@ func TestPoller_skipsWhenBusy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p := &Poller{
-		Session:  "worker",
-		Server:   mockSrv.URL,
-		APIKey:   "sk_test",
-		Interval: 10 * time.Millisecond,
-		Ctx:      ctx,
-		Stdout:   io.Discard,
+		Session:      "worker",
+		Server:       mockSrv.URL,
+		APIKey:       "sk_test",
+		Interval:     10 * time.Millisecond,
+		Ctx:          ctx,
+		Stdout:       io.Discard,
 		IdleDetector: &mockIdleDetector{busy: true},
 		capturePane: func(string) (string, error) {
 			return "❯", nil
@@ -131,12 +131,12 @@ func TestPoller_skipsWhenCapturerFails(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p := &Poller{
-		Session:  "worker",
-		Server:   mockSrv.URL,
-		APIKey:   "sk_test",
-		Interval: 10 * time.Millisecond,
-		Ctx:      ctx,
-		Stdout:   io.Discard,
+		Session:      "worker",
+		Server:       mockSrv.URL,
+		APIKey:       "sk_test",
+		Interval:     10 * time.Millisecond,
+		Ctx:          ctx,
+		Stdout:       io.Discard,
 		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			return "", io.ErrUnexpectedEOF // capture failed
@@ -170,12 +170,12 @@ func TestPoller_skipsWhenInboxEmpty(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	p := &Poller{
-		Session:  "worker",
-		Server:   mockSrv.URL,
-		APIKey:   "sk_test",
-		Interval: 10 * time.Millisecond,
-		Ctx:      ctx,
-		Stdout:   io.Discard,
+		Session:      "worker",
+		Server:       mockSrv.URL,
+		APIKey:       "sk_test",
+		Interval:     10 * time.Millisecond,
+		Ctx:          ctx,
+		Stdout:       io.Discard,
 		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
 		capturePane: func(string) (string, error) {
 			return "❯\n", nil
@@ -220,7 +220,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
 		err := RunPoll()
 		if err == nil {
@@ -235,7 +235,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false)
+		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)

@@ -17,34 +17,34 @@ func TestClaudeCodeDetector_IsBusy(t *testing.T) {
 	d := &ClaudeCodeDetector{}
 
 	tests := []struct {
-		name  string
-		pane  string
-		busy  bool
+		name string
+		pane string
+		busy bool
 	}{
 		{
-			name:  "empty pane",
-			pane:  "",
-			busy:  false,
+			name: "empty pane",
+			pane: "",
+			busy: false,
 		},
 		{
-			name:  "idle — bare prompt",
-			pane:  sep + "\n❯\n" + sep + "\n" + statusIdle + "\n",
-			busy:  false,
+			name: "idle — bare prompt",
+			pane: sep + "\n❯\n" + sep + "\n" + statusIdle + "\n",
+			busy: false,
 		},
 		{
-			name:  "typing — text after prompt",
-			pane:  sep + "\n❯ some typed message\n" + sep + "\n" + statusIdle + "\n",
-			busy:  false,
+			name: "typing — text after prompt",
+			pane: sep + "\n❯ some typed message\n" + sep + "\n" + statusIdle + "\n",
+			busy: false,
 		},
 		{
-			name:  "busy — esc to interrupt in status bar",
-			pane:  sep + "\n❯\n" + sep + "\n" + statusBusy + "\n",
-			busy:  true,
+			name: "busy — esc to interrupt in status bar",
+			pane: sep + "\n❯\n" + sep + "\n" + statusBusy + "\n",
+			busy: true,
 		},
 		{
-			name:  "busy — esc to interrupt anywhere",
-			pane:  "some output\nesc to interrupt\nmore output\n",
-			busy:  true,
+			name: "busy — esc to interrupt anywhere",
+			pane: "some output\nesc to interrupt\nmore output\n",
+			busy: true,
 		},
 	}
 
@@ -62,49 +62,49 @@ func TestClaudeCodeDetector_IsPromptEmpty(t *testing.T) {
 	d := &ClaudeCodeDetector{}
 
 	tests := []struct {
-		name         string
-		pane         string
-		promptEmpty  bool
+		name        string
+		pane        string
+		promptEmpty bool
 	}{
 		{
-			name:         "empty pane",
-			pane:         "",
-			promptEmpty:  false, // no ❯ found → not ready
+			name:        "empty pane",
+			pane:        "",
+			promptEmpty: false, // no ❯ found → not ready
 		},
 		{
-			name:         "only newlines",
-			pane:         "\n\n\n\n",
-			promptEmpty:  false,
+			name:        "only newlines",
+			pane:        "\n\n\n\n",
+			promptEmpty: false,
 		},
 		{
-			name:         "idle — bare prompt",
-			pane:         sep + "\n❯\n" + sep + "\n" + statusIdle + "\n",
-			promptEmpty:  true,
+			name:        "idle — bare prompt",
+			pane:        sep + "\n❯\n" + sep + "\n" + statusIdle + "\n",
+			promptEmpty: true,
 		},
 		{
-			name:         "idle — prompt with trailing whitespace",
-			pane:         sep + "\n❯ \n" + sep + "\n" + statusIdle + "\n",
-			promptEmpty:  true,
+			name:        "idle — prompt with trailing whitespace",
+			pane:        sep + "\n❯ \n" + sep + "\n" + statusIdle + "\n",
+			promptEmpty: true,
 		},
 		{
-			name:         "idle — busy but prompt empty",
-			pane:         sep + "\n❯\n" + sep + "\n" + statusBusy + "\n",
-			promptEmpty:  true, // prompt is empty even though Claude is busy
+			name:        "idle — busy but prompt empty",
+			pane:        sep + "\n❯\n" + sep + "\n" + statusBusy + "\n",
+			promptEmpty: true, // prompt is empty even though Claude is busy
 		},
 		{
-			name:         "typing — text after prompt",
-			pane:         sep + "\n❯ some typed message\n" + sep + "\n" + statusIdle + "\n",
-			promptEmpty:  false,
+			name:        "typing — text after prompt",
+			pane:        sep + "\n❯ some typed message\n" + sep + "\n" + statusIdle + "\n",
+			promptEmpty: false,
 		},
 		{
-			name:         "typing — short command",
-			pane:         sep + "\n❯ agentlink pull\n" + sep + "\n" + statusIdle + "\n",
-			promptEmpty:  false,
+			name:        "typing — short command",
+			pane:        sep + "\n❯ agentlink pull\n" + sep + "\n" + statusIdle + "\n",
+			promptEmpty: false,
 		},
 		{
-			name:         "claude output — no prompt visible",
-			pane:         "Here is some code:\nfunc foo() {\n  return 1\n}\n",
-			promptEmpty:  false,
+			name:        "claude output — no prompt visible",
+			pane:        "Here is some code:\nfunc foo() {\n  return 1\n}\n",
+			promptEmpty: false,
 		},
 	}
 
@@ -116,4 +116,22 @@ func TestClaudeCodeDetector_IsPromptEmpty(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestClaudeCodeLauncher_ResumeArgs(t *testing.T) {
+	l := &ClaudeCodeLauncher{}
+
+	t.Run("with session_id", func(t *testing.T) {
+		args := l.ResumeArgs("abc-123")
+		if len(args) != 3 || args[0] != "--resume" || args[1] != "abc-123" || args[2] != "--dangerously-skip-permissions" {
+			t.Errorf("unexpected args: %v", args)
+		}
+	})
+
+	t.Run("empty session_id triggers continue fallback", func(t *testing.T) {
+		args := l.ResumeArgs("")
+		if len(args) != 2 || args[0] != "--continue" || args[1] != "--dangerously-skip-permissions" {
+			t.Errorf("unexpected fallback args: %v", args)
+		}
+	})
 }

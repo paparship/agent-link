@@ -13,6 +13,16 @@ func (l *ClaudeCodeLauncher) Command() (name string, args []string) {
 	return "claude", []string{"--dangerously-skip-permissions"}
 }
 
+// ResumeArgs returns args for resuming a prior Claude Code session.
+// An empty sessionID triggers the --continue fallback (23c) for configs
+// created before session_id recording.
+func (l *ClaudeCodeLauncher) ResumeArgs(sessionID string) []string {
+	if sessionID == "" {
+		return []string{"--continue", "--dangerously-skip-permissions"}
+	}
+	return []string{"--resume", sessionID, "--dangerously-skip-permissions"}
+}
+
 func (l *ClaudeCodeLauncher) CheckPrereqs() error {
 	var missing []string
 	for _, cmd := range []string{"tmux", "claude"} {

@@ -59,7 +59,7 @@ func TestWriteConfigTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team", "claude", false)
+	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team", "claude", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ interval = 5
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://srv:8080", "dev", "/tmp/agent_team", "claude", false)
+		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://srv:8080", "dev", "/tmp/agent_team", "claude", false, nil)
 
 		cfg, err := loadConfig()
 		if err != nil {

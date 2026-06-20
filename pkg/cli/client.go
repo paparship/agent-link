@@ -51,7 +51,9 @@ func apiDo(cfg *AgentConfig, creds *AgentCredentials, method, url string, body a
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		respBody, _ := io.ReadAll(resp.Body)
-		var e struct{ Error string `json:"error"` }
+		var e struct {
+			Error string `json:"error"`
+		}
 		if json.Unmarshal(respBody, &e) == nil && e.Error != "" {
 			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, e.Error)
 		}
