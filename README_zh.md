@@ -28,6 +28,8 @@ make install BINDIR=~/.local/bin
 
 ## 部署服务端
 
+完整 systemd 部署指南见 [docs/deploy-server.md](docs/deploy-server.md)。
+
 依赖 Redis，通过环境变量配置：
 
 ```bash
@@ -57,18 +59,22 @@ agentlink init --server http://<server>:8080 --password <password> [./path]
 ### 消息
 
 ```bash
-agentlink send <target> <content>        # 发送
-agentlink pull [--all]                    # 接收
+agentlink send [--interrupt] <target> <content>   # 发送（--interrupt 中断忙碌的 agent）
+agentlink pull [--all]                             # 接收
+agentlink message status <id>                      # 查询投递状态
 ```
+
+`send` 会输出接收方状态面板：空闲 / 忙碌（含当前 task 及已进行时长） / 离线，以及未读消息数。成功投递后显示消息 ID，可用于后续状态查询。
 
 ### 任务
 
 ```bash
-agentlink task send <target> <id> "<content>"    # 发放
-agentlink task result <id> <status> "<result>"    # 回报
-agentlink task resume <id> "<guidance>"           # 恢复
-agentlink task cancel <id>                        # 取消
-agentlink task status <id>                        # 查看
+agentlink task send [--interrupt] <target> [<task_id>] "<content>"   # 发放
+agentlink task result <task_id> <status> "<result>"                   # 回报
+agentlink task resume <task_id> "<guidance>"                          # 恢复
+agentlink task cancel <task_id>                                       # 取消
+agentlink task status <task_id>                                       # 查看
+agentlink task list                                                   # 列出本设备任务
 ```
 
 ### 设备与 Session
@@ -78,7 +84,8 @@ agentlink ping                    # 心跳（标记在线）
 agentlink list [--all]            # 查看设备
 agentlink session add|remove <n>  # 管理 session
 agentlink attach <session>        # 进入 session
-agentlink uninstall                # 注销设备 + 清理本地文件
+agentlink resume                  # 重启后恢复 tmux + poller
+agentlink uninstall               # 注销设备 + 清理本地文件
 agentlink poll                    # 运行轮询（前台）
 ```
 
@@ -88,8 +95,31 @@ agentlink poll                    # 运行轮询（前台）
 
 - 每 5 秒轮询收件箱
 - Agent 空闲时自动注入新消息
-- Agent 忙时（生成中/用户输入中）跳过
+- 注入的消息带 `[来自 device:session 的消息]` 标识头，便于 agent 区分队列注入与用户输入
+- 每 ~60 秒发送心跳，保持设备在线状态
+- 首次启动时自动接受 Claude Code trust prompt
+- Agent 忙时（生成中 / 用户输入中）跳过
 - pane 捕获失败时静默跳过
+
+### 重启恢复
+
+`agentlink resume` 从磁盘配置重建 tmux session 和 poller，不重新注册设备。机器重启后执行：
+
+```bash
+agentlink resume
+```
+
+每个 session 的 Claude Code 会恢复到上次记录的 `session_id`（保存在 `~/.agentlink/config.toml` 的 `[sessions]` 段）。对于该功能上线前的旧配置，自动用 `--continue` 作为 fallback。
+
+## 数据保留
+
+Redis 数据有 TTL，防止无限堆积：
+
+| 数据 | 保留时长 |
+|------|----------|
+| 收件箱未读消息 | 7 天 |
+| 已投递消息记录 | 24 小时 |
+| 已完成任务记录 | 30 天 |
 
 ## 架构
 
