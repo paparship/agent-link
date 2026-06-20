@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"encoding/json"
@@ -7,12 +7,12 @@ import (
 )
 
 func RunPing() error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/agents/heartbeat", nil)
+	resp, err := APIDo(cfg, creds, "POST", "/agents/heartbeat", nil)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,7 @@ type agentListResponse struct {
 }
 
 func RunList(all bool) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func RunList(all bool) error {
 		path += "?all=true"
 	}
 
-	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	resp, err := APIDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
 	}

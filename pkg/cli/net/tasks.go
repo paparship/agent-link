@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"bytes"
@@ -10,12 +10,12 @@ import (
 )
 
 func RunTaskSend(target, taskID, content string, interrupt bool) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	session, err := findCurrentSession()
+	session, err := FindCurrentSession()
 	if err != nil {
 		return err
 	}
@@ -86,12 +86,12 @@ func RunTaskSend(target, taskID, content string, interrupt bool) error {
 }
 
 func RunTaskResult(taskID, status, result string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/tasks/result", map[string]string{
+	resp, err := APIDo(cfg, creds, "POST", "/tasks/result", map[string]string{
 		"task_id": taskID,
 		"status":  status,
 		"result":  result,
@@ -110,12 +110,12 @@ func RunTaskResult(taskID, status, result string) error {
 }
 
 func RunTaskResume(taskID, content string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/tasks/resume", map[string]string{
+	resp, err := APIDo(cfg, creds, "POST", "/tasks/resume", map[string]string{
 		"task_id": taskID,
 		"content": content,
 	})
@@ -129,12 +129,12 @@ func RunTaskResume(taskID, content string) error {
 }
 
 func RunTaskCancel(taskID string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/tasks/cancel", map[string]string{
+	resp, err := APIDo(cfg, creds, "POST", "/tasks/cancel", map[string]string{
 		"task_id": taskID,
 	})
 	if err != nil {
@@ -147,18 +147,18 @@ func RunTaskCancel(taskID string) error {
 }
 
 func RunTaskList() error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	session, err := findCurrentSession()
+	session, err := FindCurrentSession()
 	if err != nil {
 		return err
 	}
 
 	path := fmt.Sprintf("/tasks/list?session=%s", session)
-	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	resp, err := APIDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
 	}
@@ -203,13 +203,13 @@ func RunTaskList() error {
 }
 
 func RunTaskStatus(taskID string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
 	path := fmt.Sprintf("/tasks/status?task_id=%s", taskID)
-	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	resp, err := APIDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
 	}

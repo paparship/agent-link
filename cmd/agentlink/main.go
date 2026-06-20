@@ -7,7 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/team/agentlink/pkg/cli"
+	api "github.com/team/agentlink/pkg/cli/net"
+	rt "github.com/team/agentlink/pkg/cli/runtime"
 )
 
 func main() {
@@ -92,7 +93,7 @@ func cmdInit(args []string) {
 		path = "./agent_team"
 	}
 
-	opts := &cli.InitOptions{
+	opts := &rt.InitOptions{
 		Server:   *server,
 		Password: *password,
 		Device:   *device,
@@ -102,7 +103,7 @@ func cmdInit(args []string) {
 		Force:    *force,
 	}
 
-	if err := cli.RunInit(opts); err != nil {
+	if err := rt.RunInit(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -133,7 +134,7 @@ func cmdSend(args []string) {
 	target := rest[0]
 	content := strings.Join(rest[1:], " ")
 
-	if err := cli.RunSend(target, content, *interrupt); err != nil {
+	if err := api.RunSend(target, content, *interrupt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -144,21 +145,21 @@ func cmdPull(args []string) {
 	all := fs.Bool("all", false, "Pull all available messages (max 10)")
 	fs.Parse(args)
 
-	if err := cli.RunPull(*all); err != nil {
+	if err := api.RunPull(*all); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func cmdPoll(args []string) {
-	if err := cli.RunPoll(); err != nil {
+	if err := rt.RunPoll(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func cmdPing() {
-	if err := cli.RunPing(); err != nil {
+	if err := api.RunPing(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -169,7 +170,7 @@ func cmdList(args []string) {
 	all := fs.Bool("all", false, "Show all devices")
 	fs.Parse(args)
 
-	if err := cli.RunList(*all); err != nil {
+	if err := api.RunList(*all); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -186,7 +187,7 @@ func cmdMessage(args []string) {
 			fmt.Fprintln(os.Stderr, "usage: agentlink message status <id>")
 			os.Exit(1)
 		}
-		if err := cli.RunMessageStatus(args[1]); err != nil {
+		if err := api.RunMessageStatus(args[1]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			os.Exit(1)
 		}
@@ -242,7 +243,7 @@ func cmdTaskSend(args []string) {
 		content = strings.Join(rest[2:], " ")
 	}
 
-	if err := cli.RunTaskSend(target, taskID, content, *interrupt); err != nil {
+	if err := api.RunTaskSend(target, taskID, content, *interrupt); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -257,7 +258,7 @@ func cmdTaskResult(args []string) {
 	status := args[1]
 	result := strings.Join(args[2:], " ")
 
-	if err := cli.RunTaskResult(taskID, status, result); err != nil {
+	if err := api.RunTaskResult(taskID, status, result); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -271,7 +272,7 @@ func cmdTaskResume(args []string) {
 	taskID := args[0]
 	guidance := strings.Join(args[1:], " ")
 
-	if err := cli.RunTaskResume(taskID, guidance); err != nil {
+	if err := api.RunTaskResume(taskID, guidance); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -284,7 +285,7 @@ func cmdTaskCancel(args []string) {
 	}
 	taskID := args[0]
 
-	if err := cli.RunTaskCancel(taskID); err != nil {
+	if err := api.RunTaskCancel(taskID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -312,7 +313,7 @@ func cmdSessionAdd(args []string) {
 		os.Exit(1)
 	}
 	name := args[0]
-	if err := cli.RunSessionAdd(name); err != nil {
+	if err := rt.RunSessionAdd(name); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -324,7 +325,7 @@ func cmdSessionRemove(args []string) {
 		os.Exit(1)
 	}
 	name := args[0]
-	if err := cli.RunSessionRemove(name); err != nil {
+	if err := rt.RunSessionRemove(name); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -336,14 +337,14 @@ func cmdAttach(args []string) {
 		os.Exit(1)
 	}
 	session := args[0]
-	if err := cli.RunAttach(session); err != nil {
+	if err := rt.RunAttach(session); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func cmdResume(args []string) {
-	if err := cli.RunResume(); err != nil {
+	if err := rt.RunResume(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -353,14 +354,14 @@ func cmdUninstall() {
 	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
 	purge := fs.Bool("purge", false, "Also deregister from server")
 	fs.Parse(os.Args[2:])
-	if err := cli.RunUninstall(*purge); err != nil {
+	if err := rt.RunUninstall(*purge); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
 
 func cmdTaskList() {
-	if err := cli.RunTaskList(); err != nil {
+	if err := api.RunTaskList(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -373,7 +374,7 @@ func cmdTaskStatus(args []string) {
 	}
 	taskID := args[0]
 
-	if err := cli.RunTaskStatus(taskID); err != nil {
+	if err := api.RunTaskStatus(taskID); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

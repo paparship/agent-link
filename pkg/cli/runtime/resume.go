@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 // RunResume rebuilds tmux sessions and pollers from the on-disk config,
@@ -13,11 +15,11 @@ import (
 // to its recorded session_id (from [sessions]); configs without [sessions]
 // fall back to --continue (23c).
 func RunResume() error {
-	cfg, err := loadConfig()
+	cfg, err := api.LoadConfig()
 	if err != nil {
 		return err
 	}
-	creds, err := loadCredentials()
+	creds, err := api.LoadCredentials()
 	if err != nil {
 		return err
 	}
@@ -55,7 +57,7 @@ func RunResume() error {
 	}
 
 	// Send a heartbeat so the device shows online immediately.
-	if err := RunPing(); err != nil {
+	if err := api.RunPing(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: heartbeat failed: %v\n", err)
 	}
 
@@ -68,7 +70,7 @@ func RunResume() error {
 
 // resumeSessionList returns the session names to resume and whether the
 // [sessions] segment was absent (triggering 23c fallback).
-func resumeSessionList(cfg *AgentConfig) ([]string, bool) {
+func resumeSessionList(cfg *api.AgentConfig) ([]string, bool) {
 	if len(cfg.Sessions) > 0 {
 		names := make([]string, 0, len(cfg.Sessions))
 		for k := range cfg.Sessions {
@@ -98,8 +100,8 @@ func resumeSessionList(cfg *AgentConfig) ([]string, bool) {
 
 // pingServer verifies the device is still registered by issuing a heartbeat.
 // Returns an error if the server rejects the credentials.
-func pingServer(cfg *AgentConfig, creds *AgentCredentials) error {
-	resp, err := apiDo(cfg, creds, "POST", "/agents/heartbeat", nil)
+func pingServer(cfg *api.AgentConfig, creds *api.AgentCredentials) error {
+	resp, err := api.APIDo(cfg, creds, "POST", "/agents/heartbeat", nil)
 	if err != nil {
 		return err
 	}

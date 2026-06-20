@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 
 	"github.com/team/agentlink/pkg/adapter"
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 func RunSessionAdd(name string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := api.LoadAuth()
 	if err != nil {
 		return err
 	}
@@ -52,7 +53,7 @@ func RunSessionAdd(name string) error {
 
 	// Write .agentlink.toml
 	tomlPath := filepath.Join(sessionDir, ".agentlink.toml")
-	if err := writeSessionTOML(tomlPath, name, cfg.Device); err != nil {
+	if err := api.WriteSessionTOML(tomlPath, name, cfg.Device); err != nil {
 		return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 	}
 
@@ -78,7 +79,7 @@ func RunSessionAdd(name string) error {
 	// Update config.toml [sessions] with the new session_id
 	configPath := filepath.Join(os.Getenv("HOME"), ".agentlink", "config.toml")
 	if sid, ok := sessions[name]; ok && sid != "" {
-		if err := updateSessionID(configPath, name, sid); err != nil {
+		if err := api.UpdateSessionID(configPath, name, sid); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not record session_id: %v\n", err)
 		}
 	}
@@ -93,7 +94,7 @@ func RunSessionAdd(name string) error {
 }
 
 func RunSessionRemove(name string) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := api.LoadAuth()
 	if err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func RunSessionRemove(name string) error {
 }
 
 func RunUninstall(purge bool) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := api.LoadAuth()
 	if err != nil {
 		return err
 	}
@@ -154,7 +155,7 @@ func RunUninstall(purge bool) error {
 
 	// Deregister from server only on --purge
 	if purge {
-		resp, err := apiDo(cfg, creds, "DELETE", "/agents/device", nil)
+		resp, err := api.APIDo(cfg, creds, "DELETE", "/agents/device", nil)
 		if err != nil {
 			return err
 		}
@@ -205,7 +206,7 @@ func killSessionSessions(baseDir string) {
 }
 
 func RunAttach(session string) error {
-	cfg, err := loadConfig()
+	cfg, err := api.LoadConfig()
 	if err != nil {
 		return err
 	}
@@ -251,8 +252,8 @@ func checkTmux() error {
 	return nil
 }
 
-func fetchSessions(cfg *AgentConfig, creds *AgentCredentials) ([]string, error) {
-	resp, err := apiDo(cfg, creds, "GET", "/agents/list", nil)
+func fetchSessions(cfg *api.AgentConfig, creds *api.AgentCredentials) ([]string, error) {
+	resp, err := api.APIDo(cfg, creds, "GET", "/agents/list", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -274,8 +275,8 @@ func fetchSessions(cfg *AgentConfig, creds *AgentCredentials) ([]string, error) 
 	return list.Agents[0].Sessions, nil
 }
 
-func patchSessions(cfg *AgentConfig, creds *AgentCredentials, sessions []string) error {
-	resp, err := apiDo(cfg, creds, "PATCH", "/agents/sessions", map[string][]string{
+func patchSessions(cfg *api.AgentConfig, creds *api.AgentCredentials, sessions []string) error {
+	resp, err := api.APIDo(cfg, creds, "PATCH", "/agents/sessions", map[string][]string{
 		"sessions": sessions,
 	})
 	if err != nil {

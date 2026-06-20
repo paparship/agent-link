@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ func setupTaskEnv(t *testing.T, serverURL string) string {
 
 	agentlinkDir := filepath.Join(homeDir, ".agentlink")
 	os.MkdirAll(agentlinkDir, 0755)
-	writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false, nil)
+	WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false, nil)
 
 	creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
 	credData, _ := json.MarshalIndent(creds, "", "  ")
@@ -26,7 +26,7 @@ func setupTaskEnv(t *testing.T, serverURL string) string {
 
 	sessionDir := filepath.Join(homeDir, "worker")
 	os.MkdirAll(sessionDir, 0755)
-	writeSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
+	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
 
 	return sessionDir
 }
@@ -187,7 +187,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
 		err := RunTaskSend("worker", "001", "hi", false)
 		if err == nil {
@@ -202,7 +202,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)

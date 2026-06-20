@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"encoding/json"
@@ -21,7 +21,7 @@ func setupAgentEnv(t *testing.T, serverURL string) string {
 	// ~/.agentlink/config.toml
 	agentlinkDir := filepath.Join(homeDir, ".agentlink")
 	os.MkdirAll(agentlinkDir, 0755)
-	writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false, nil)
+	WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), serverURL, "test-device", homeDir, "claude", false, nil)
 
 	// ~/.agentlink/credentials.json
 	creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
@@ -31,7 +31,7 @@ func setupAgentEnv(t *testing.T, serverURL string) string {
 	// worker/.agentlink.toml
 	sessionDir := filepath.Join(homeDir, "worker")
 	os.MkdirAll(sessionDir, 0755)
-	writeSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
+	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
 
 	return sessionDir
 }
@@ -155,7 +155,7 @@ func TestRunSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
 		err := RunSend("worker", "hi", false)
 		if err == nil {
@@ -170,7 +170,7 @@ func TestRunSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
@@ -322,16 +322,16 @@ server = "http://example.com"
 device = "my-device"
 base_dir = "/home/user/agent_team"
 `
-	if v := readTOML(content, "server"); v != "http://example.com" {
+	if v := ReadTOML(content, "server"); v != "http://example.com" {
 		t.Errorf("expected http://example.com, got %q", v)
 	}
-	if v := readTOML(content, "device"); v != "my-device" {
+	if v := ReadTOML(content, "device"); v != "my-device" {
 		t.Errorf("expected my-device, got %q", v)
 	}
-	if v := readTOML(content, "base_dir"); v != "/home/user/agent_team" {
+	if v := ReadTOML(content, "base_dir"); v != "/home/user/agent_team" {
 		t.Errorf("expected /home/user/agent_team, got %q", v)
 	}
-	if v := readTOML(content, "nonexistent"); v != "" {
+	if v := ReadTOML(content, "nonexistent"); v != "" {
 		t.Errorf("expected empty for nonexistent key, got %q", v)
 	}
 }
@@ -342,13 +342,13 @@ func TestFindCurrentSession(t *testing.T) {
 	os.MkdirAll(sub, 0755)
 
 	// Place .agentlink.toml at dir/a/b/
-	writeSessionTOML(filepath.Join(dir, "a", "b", ".agentlink.toml"), "my-session", "dev")
+	WriteSessionTOML(filepath.Join(dir, "a", "b", ".agentlink.toml"), "my-session", "dev")
 
 	origWd, _ := os.Getwd()
 	defer os.Chdir(origWd)
 	os.Chdir(sub)
 
-	session, err := findCurrentSession()
+	session, err := FindCurrentSession()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestFindCurrentSession_notFound(t *testing.T) {
 	defer os.Chdir(origWd)
 	os.Chdir(dir)
 
-	_, err := findCurrentSession()
+	_, err := FindCurrentSession()
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -377,9 +377,9 @@ func TestLoadConfig(t *testing.T) {
 	t.Setenv("HOME", homeDir)
 
 	os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-	writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://srv:8080", "test-dev", "/tmp", "claude", false, nil)
+	WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://srv:8080", "test-dev", "/tmp", "claude", false, nil)
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +395,7 @@ func TestLoadConfig_missing(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	_, err := loadConfig()
+	_, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -410,7 +410,7 @@ func TestLoadCredentials(t *testing.T) {
 	data, _ := json.MarshalIndent(creds, "", "  ")
 	os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), data, 0600)
 
-	c, err := loadCredentials()
+	c, err := LoadCredentials()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +423,7 @@ func TestLoadCredentials_missing(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 
-	_, err := loadCredentials()
+	_, err := LoadCredentials()
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"bytes"
@@ -9,12 +9,12 @@ import (
 )
 
 // loadAuth loads config and credentials in one call to reduce repetition.
-func loadAuth() (*AgentConfig, *AgentCredentials, error) {
-	cfg, err := loadConfig()
+func LoadAuth() (*AgentConfig, *AgentCredentials, error) {
+	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, nil, err
 	}
-	creds, err := loadCredentials()
+	creds, err := LoadCredentials()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -24,7 +24,7 @@ func loadAuth() (*AgentConfig, *AgentCredentials, error) {
 // apiDo sends an authenticated HTTP request to the agentlink server.
 //
 // The caller MUST close resp.Body when done.
-func apiDo(cfg *AgentConfig, creds *AgentCredentials, method, url string, body any) (*http.Response, error) {
+func APIDo(cfg *AgentConfig, creds *AgentCredentials, method, url string, body any) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)

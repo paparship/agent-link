@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const defaultPollInterval = 5
+const DefaultPollInterval = 5
 
 type PollConfig struct {
 	Enabled  bool
@@ -30,7 +30,7 @@ type AgentCredentials struct {
 	APIKey string `json:"api_key"`
 }
 
-func loadConfig() (*AgentConfig, error) {
+func LoadConfig() (*AgentConfig, error) {
 	path := filepath.Join(os.Getenv("HOME"), ".agentlink", "config.toml")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -38,15 +38,15 @@ func loadConfig() (*AgentConfig, error) {
 	}
 
 	cfg := &AgentConfig{
-		Server:  readTOML(string(data), "server"),
-		Device:  readTOML(string(data), "device"),
-		BaseDir: readTOML(string(data), "base_dir"),
-		Agent:   readTOML(string(data), "agent"),
+		Server:  ReadTOML(string(data), "server"),
+		Device:  ReadTOML(string(data), "device"),
+		BaseDir: ReadTOML(string(data), "base_dir"),
+		Agent:   ReadTOML(string(data), "agent"),
 		Poll: PollConfig{
-			Enabled:  readTOMLBool(string(data), "poll.enabled", true),
-			Interval: readTOMLInt(string(data), "poll.interval", 5),
+			Enabled:  ReadTOMLBool(string(data), "poll.enabled", true),
+			Interval: ReadTOMLInt(string(data), "poll.interval", 5),
 		},
-		Sessions: readTOMLSection(string(data), "sessions"),
+		Sessions: ReadTOMLSection(string(data), "sessions"),
 	}
 	if cfg.Server == "" || cfg.Device == "" {
 		return nil, fmt.Errorf("invalid config file at %s: missing server or device", path)
@@ -57,7 +57,7 @@ func loadConfig() (*AgentConfig, error) {
 	return cfg, nil
 }
 
-func loadCredentials() (*AgentCredentials, error) {
+func LoadCredentials() (*AgentCredentials, error) {
 	path := filepath.Join(os.Getenv("HOME"), ".agentlink", "credentials.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,7 +74,7 @@ func loadCredentials() (*AgentCredentials, error) {
 	return &creds, nil
 }
 
-func findCurrentSession() (string, error) {
+func FindCurrentSession() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -84,7 +84,7 @@ func findCurrentSession() (string, error) {
 	for {
 		path := filepath.Join(dir, ".agentlink.toml")
 		if data, err := os.ReadFile(path); err == nil {
-			session := readTOML(string(data), "session")
+			session := ReadTOML(string(data), "session")
 			if session != "" {
 				return session, nil
 			}
@@ -99,7 +99,7 @@ func findCurrentSession() (string, error) {
 	return "", fmt.Errorf(".agentlink.toml not found from %s upward", cwd)
 }
 
-func readTOML(content, key string) string {
+func ReadTOML(content, key string) string {
 	var section string
 	var lookupKey string
 	if idx := strings.Index(key, "."); idx >= 0 {
@@ -130,16 +130,16 @@ func readTOML(content, key string) string {
 	return ""
 }
 
-func readTOMLBool(content, key string, defaultVal bool) bool {
-	v := readTOML(content, key)
+func ReadTOMLBool(content, key string, defaultVal bool) bool {
+	v := ReadTOML(content, key)
 	if v == "" {
 		return defaultVal
 	}
 	return v == "true"
 }
 
-func readTOMLInt(content, key string, defaultVal int) int {
-	v := readTOML(content, key)
+func ReadTOMLInt(content, key string, defaultVal int) int {
+	v := ReadTOML(content, key)
 	if v == "" {
 		return defaultVal
 	}
@@ -152,7 +152,7 @@ func readTOMLInt(content, key string, defaultVal int) int {
 
 // readTOMLSection parses all key = "value" pairs under [section] into a map.
 // Returns nil if the section is absent. Used for [sessions] in config.toml.
-func readTOMLSection(content, section string) map[string]string {
+func ReadTOMLSection(content, section string) map[string]string {
 	result := map[string]string{}
 	inSection := false
 	for _, line := range strings.Split(content, "\n") {
@@ -180,14 +180,14 @@ func readTOMLSection(content, section string) map[string]string {
 // updateSessionID rewrites the [sessions] entry for sessionName with a new
 // session_id, preserving all other config fields. If [sessions] is absent,
 // it is appended.
-func updateSessionID(configPath, sessionName, sessionID string) error {
+func UpdateSessionID(configPath, sessionName, sessionID string) error {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("cannot read config: %w", err)
 	}
 	content := string(data)
 
-	sessions := readTOMLSection(content, "sessions")
+	sessions := ReadTOMLSection(content, "sessions")
 	if sessions == nil {
 		sessions = map[string]string{}
 	}
@@ -206,7 +206,7 @@ func updateSessionID(configPath, sessionName, sessionID string) error {
 			if sectionName == "sessions" {
 				inSessions = true
 				if !sessionsWritten {
-					beforeSessions.WriteString(buildSessionsSection(sessions))
+					beforeSessions.WriteString(BuildSessionsSection(sessions))
 					sessionsWritten = true
 				}
 				continue
@@ -224,13 +224,13 @@ func updateSessionID(configPath, sessionName, sessionID string) error {
 
 	rebuilt.WriteString(beforeSessions.String())
 	if !sessionsWritten {
-		rebuilt.WriteString(buildSessionsSection(sessions))
+		rebuilt.WriteString(BuildSessionsSection(sessions))
 	}
 
 	return os.WriteFile(configPath, []byte(rebuilt.String()), 0600)
 }
 
-func buildSessionsSection(sessions map[string]string) string {
+func BuildSessionsSection(sessions map[string]string) string {
 	var b strings.Builder
 	b.WriteString("[sessions]\n")
 	for _, name := range sortedSessionKeys(sessions) {
@@ -246,4 +246,35 @@ func sortedSessionKeys(m map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// WriteConfigTOML writes the agent-level config file. When sessions is
+// non-empty, appends a [sessions] segment with the recorded session_ids.
+func WriteConfigTOML(path, server, device, baseDir, agent string, noPoll bool, sessions map[string]string) error {
+	pollVal := "true"
+	if noPoll {
+		pollVal = "false"
+	}
+	content := fmt.Sprintf(`server = %q
+device = %q
+base_dir = %q
+agent = %q
+
+[poll]
+enabled = %s
+interval = 5
+`, server, device, baseDir, agent, pollVal)
+
+	if len(sessions) > 0 {
+		content += "\n" + BuildSessionsSection(sessions)
+	}
+	return os.WriteFile(path, []byte(content), 0600)
+}
+
+// WriteSessionTOML writes the per-session .agentlink.toml marker file.
+func WriteSessionTOML(path, session, device string) error {
+	content := fmt.Sprintf(`session = %q
+device = %q
+`, session, device)
+	return os.WriteFile(path, []byte(content), 0600)
 }

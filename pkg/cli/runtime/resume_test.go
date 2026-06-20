@@ -1,9 +1,11 @@
-package cli
+package rt
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 func TestReadTOMLSection(t *testing.T) {
@@ -18,7 +20,7 @@ interval = 5
 main = "abc-123"
 worker = "def-456"
 `
-	sessions := readTOMLSection(content, "sessions")
+	sessions := api.ReadTOMLSection(content, "sessions")
 	if sessions == nil {
 		t.Fatal("expected non-nil sessions map")
 	}
@@ -34,7 +36,7 @@ func TestReadTOMLSection_absent(t *testing.T) {
 	content := `server = "http://example.com"
 device = "my-device"
 `
-	sessions := readTOMLSection(content, "sessions")
+	sessions := api.ReadTOMLSection(content, "sessions")
 	if sessions != nil {
 		t.Errorf("expected nil for absent section, got %v", sessions)
 	}
@@ -45,7 +47,7 @@ func TestReadTOMLSection_empty(t *testing.T) {
 
 [sessions]
 `
-	sessions := readTOMLSection(content, "sessions")
+	sessions := api.ReadTOMLSection(content, "sessions")
 	if sessions != nil {
 		t.Errorf("expected nil for empty section, got %v", sessions)
 	}
@@ -56,9 +58,9 @@ func TestUpdateSessionID(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 
 	// Initial config without [sessions]
-	writeConfigTOML(path, "http://srv:8080", "dev", "/tmp", "claude", false, nil)
+	api.WriteConfigTOML(path, "http://srv:8080", "dev", "/tmp", "claude", false, nil)
 
-	if err := updateSessionID(path, "main", "id-main-001"); err != nil {
+	if err := api.UpdateSessionID(path, "main", "id-main-001"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -72,7 +74,7 @@ func TestUpdateSessionID(t *testing.T) {
 	}
 
 	// Update a second session — [sessions] already exists
-	if err := updateSessionID(path, "worker", "id-worker-002"); err != nil {
+	if err := api.UpdateSessionID(path, "worker", "id-worker-002"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,7 +91,7 @@ func TestUpdateSessionID(t *testing.T) {
 	}
 
 	// Overwrite an existing session_id
-	if err := updateSessionID(path, "main", "id-main-v2"); err != nil {
+	if err := api.UpdateSessionID(path, "main", "id-main-v2"); err != nil {
 		t.Fatal(err)
 	}
 	data, _ = os.ReadFile(path)
@@ -103,7 +105,7 @@ func TestUpdateSessionID(t *testing.T) {
 }
 
 func TestResumeSessionList_withSessions(t *testing.T) {
-	cfg := &AgentConfig{
+	cfg := &api.AgentConfig{
 		BaseDir:  "/tmp/irrelevant",
 		Sessions: map[string]string{"worker": "w-id", "main": "m-id"},
 	}
@@ -122,12 +124,12 @@ func TestResumeSessionList_legacyFallback(t *testing.T) {
 	for _, s := range []string{"main", "worker"} {
 		dir := filepath.Join(baseDir, s)
 		os.MkdirAll(dir, 0755)
-		writeSessionTOML(filepath.Join(dir, ".agentlink.toml"), s, "dev")
+		api.WriteSessionTOML(filepath.Join(dir, ".agentlink.toml"), s, "dev")
 	}
 	// Also add a non-session directory (no .agentlink.toml) to ensure it's skipped
 	os.MkdirAll(filepath.Join(baseDir, "not-a-session"), 0755)
 
-	cfg := &AgentConfig{BaseDir: baseDir, Sessions: nil}
+	cfg := &api.AgentConfig{BaseDir: baseDir, Sessions: nil}
 	names, fallback := resumeSessionList(cfg)
 	if !fallback {
 		t.Error("expected fallback=true when [sessions] absent")
@@ -139,7 +141,7 @@ func TestResumeSessionList_legacyFallback(t *testing.T) {
 
 func TestResumeSessionList_emptyBaseDir(t *testing.T) {
 	baseDir := t.TempDir()
-	cfg := &AgentConfig{BaseDir: baseDir, Sessions: nil}
+	cfg := &api.AgentConfig{BaseDir: baseDir, Sessions: nil}
 	names, fallback := resumeSessionList(cfg)
 	if !fallback {
 		t.Error("expected fallback=true for empty base_dir")
@@ -150,17 +152,17 @@ func TestResumeSessionList_emptyBaseDir(t *testing.T) {
 }
 
 // loadConfigFromBytes parses config content directly without touching $HOME.
-func loadConfigFromBytes(content string) (*AgentConfig, error) {
-	cfg := &AgentConfig{
-		Server:  readTOML(content, "server"),
-		Device:  readTOML(content, "device"),
-		BaseDir: readTOML(content, "base_dir"),
-		Agent:   readTOML(content, "agent"),
-		Poll: PollConfig{
-			Enabled:  readTOMLBool(content, "poll.enabled", true),
-			Interval: readTOMLInt(content, "poll.interval", 5),
+func loadConfigFromBytes(content string) (*api.AgentConfig, error) {
+	cfg := &api.AgentConfig{
+		Server:  api.ReadTOML(content, "server"),
+		Device:  api.ReadTOML(content, "device"),
+		BaseDir: api.ReadTOML(content, "base_dir"),
+		Agent:   api.ReadTOML(content, "agent"),
+		Poll: api.PollConfig{
+			Enabled:  api.ReadTOMLBool(content, "poll.enabled", true),
+			Interval: api.ReadTOMLInt(content, "poll.interval", 5),
 		},
-		Sessions: readTOMLSection(content, "sessions"),
+		Sessions: api.ReadTOMLSection(content, "sessions"),
 	}
 	if cfg.Agent == "" {
 		cfg.Agent = "claude"
