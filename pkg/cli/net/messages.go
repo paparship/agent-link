@@ -1,4 +1,4 @@
-package cli
+package api
 
 import (
 	"encoding/json"
@@ -48,12 +48,12 @@ func displayRecipientStatus(status *recipientStatusJSON) {
 }
 
 func RunSend(target, content string, interrupt bool) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	session, err := findCurrentSession()
+	session, err := FindCurrentSession()
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func RunSend(target, content string, interrupt bool) error {
 		target = cfg.Device + ":" + target
 	}
 
-	resp, err := apiDo(cfg, creds, "POST", "/messages/send", map[string]any{
+	resp, err := APIDo(cfg, creds, "POST", "/messages/send", map[string]any{
 		"to":           target,
 		"from_session": session,
 		"interrupt":    interrupt,
@@ -86,12 +86,12 @@ func RunSend(target, content string, interrupt bool) error {
 }
 
 func RunPull(all bool) error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
-	session, err := findCurrentSession()
+	session, err := FindCurrentSession()
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func RunPull(all bool) error {
 	}
 
 	path := fmt.Sprintf("/inbox/pull?session=%s&limit=%d", session, limit)
-	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	resp, err := APIDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
 	}
@@ -143,13 +143,13 @@ func RunMessageStatus(msgID string) error {
 		return fmt.Errorf("message ID is required")
 	}
 
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
 	}
 
 	path := fmt.Sprintf("/messages/status?id=%s", msgID)
-	resp, err := apiDo(cfg, creds, "GET", path, nil)
+	resp, err := APIDo(cfg, creds, "GET", path, nil)
 	if err != nil {
 		return err
 	}

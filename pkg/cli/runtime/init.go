@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/team/agentlink/pkg/adapter"
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 type InitOptions struct {
@@ -92,7 +93,7 @@ func RunInit(opts *InitOptions) error {
 
 	// Write config.toml (initial; [sessions] added after tmux launch records ids)
 	configPath := filepath.Join(agentlinkDir, "config.toml")
-	if err := writeConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll, nil); err != nil {
+	if err := api.WriteConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll, nil); err != nil {
 		return fmt.Errorf("cannot write config: %w", err)
 	}
 
@@ -117,7 +118,7 @@ func RunInit(opts *InitOptions) error {
 	for _, session := range regResp.Sessions {
 		sessionDir := filepath.Join(absPath, session)
 		tomlPath := filepath.Join(sessionDir, ".agentlink.toml")
-		if err := writeSessionTOML(tomlPath, session, device); err != nil {
+		if err := api.WriteSessionTOML(tomlPath, session, device); err != nil {
 			return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 		}
 		claudePath := filepath.Join(sessionDir, "CLAUDE.md")
@@ -137,7 +138,7 @@ func RunInit(opts *InitOptions) error {
 	}
 
 	// Rewrite config.toml with [sessions] segment
-	if err := writeConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll, sessions); err != nil {
+	if err := api.WriteConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll, sessions); err != nil {
 		return fmt.Errorf("cannot rewrite config with session ids: %w", err)
 	}
 
@@ -155,34 +156,6 @@ func RunInit(opts *InitOptions) error {
 	fmt.Println("  agentlink attach worker    # switch to worker session")
 
 	return nil
-}
-
-func writeConfigTOML(path, server, device, baseDir, agent string, noPoll bool, sessions map[string]string) error {
-	pollVal := "true"
-	if noPoll {
-		pollVal = "false"
-	}
-	content := fmt.Sprintf(`server = %q
-device = %q
-base_dir = %q
-agent = %q
-
-[poll]
-enabled = %s
-interval = 5
-`, server, device, baseDir, agent, pollVal)
-
-	if len(sessions) > 0 {
-		content += "\n" + buildSessionsSection(sessions)
-	}
-	return os.WriteFile(path, []byte(content), 0600)
-}
-
-func writeSessionTOML(path, session, device string) error {
-	content := fmt.Sprintf(`session = %q
-device = %q
-`, session, device)
-	return os.WriteFile(path, []byte(content), 0600)
 }
 
 // launchOpts controls how launchSessions starts each tmux session.

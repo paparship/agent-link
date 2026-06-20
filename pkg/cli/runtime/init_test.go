@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"encoding/json"
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/team/agentlink/pkg/adapter"
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 func TestCheckPrereqs(t *testing.T) {
@@ -59,7 +60,7 @@ func TestWriteConfigTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 
-	err := writeConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team", "claude", false, nil)
+	err := api.WriteConfigTOML(path, "http://server:8080", "my-device", "/tmp/agent_team", "claude", false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestWriteSessionTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".agentlink.toml")
 
-	err := writeSessionTOML(path, "worker", "my-device")
+	err := api.WriteSessionTOML(path, "worker", "my-device")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestWriteSessionTOMLFileMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".agentlink.toml")
 
-	writeSessionTOML(path, "main", "dev")
+	api.WriteSessionTOML(path, "main", "dev")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -294,7 +295,7 @@ interval = 10
 `
 		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
 
-		cfg, err := loadConfig()
+		cfg, err := api.LoadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -323,7 +324,7 @@ interval = 5
 `
 		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
 
-		cfg, err := loadConfig()
+		cfg, err := api.LoadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,9 +339,9 @@ interval = 5
 
 		agentlinkDir := filepath.Join(homeDir, ".agentlink")
 		os.MkdirAll(agentlinkDir, 0755)
-		writeConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://srv:8080", "dev", "/tmp/agent_team", "claude", false, nil)
+		api.WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), "http://srv:8080", "dev", "/tmp/agent_team", "claude", false, nil)
 
-		cfg, err := loadConfig()
+		cfg, err := api.LoadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -369,7 +370,7 @@ interval = 30
 `
 		os.WriteFile(filepath.Join(agentlinkDir, "config.toml"), []byte(config), 0600)
 
-		cfg, err := loadConfig()
+		cfg, err := api.LoadConfig()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -402,7 +403,7 @@ enabled = false
 
 		sessionDir := filepath.Join(homeDir, "agent_team", "worker")
 		os.MkdirAll(sessionDir, 0755)
-		writeSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "dev")
+		api.WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "dev")
 
 		origWd, _ := os.Getwd()
 		os.Chdir(sessionDir)

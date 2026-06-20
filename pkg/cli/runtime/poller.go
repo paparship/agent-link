@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/team/agentlink/pkg/adapter"
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 // Poller polls the inbox and injects messages into the agent via tmux.
@@ -241,7 +242,7 @@ var tmuxSendKeys = func(session, text string) error {
 // -- entry point --
 
 func RunPoll() error {
-	cfg, creds, err := loadAuth()
+	cfg, creds, err := api.LoadAuth()
 	if err != nil {
 		return err
 	}
@@ -251,14 +252,14 @@ func RunPoll() error {
 		return nil
 	}
 
-	session, err := findCurrentSession()
+	session, err := api.FindCurrentSession()
 	if err != nil {
 		return err
 	}
 
 	interval := cfg.Poll.Interval
 	if interval <= 0 {
-		interval = defaultPollInterval
+		interval = api.DefaultPollInterval
 	}
 
 	p := &Poller{

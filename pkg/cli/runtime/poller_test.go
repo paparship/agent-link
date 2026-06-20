@@ -1,4 +1,4 @@
-package cli
+package rt
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	api "github.com/team/agentlink/pkg/cli/net"
 )
 
 // mockIdleDetector implements adapter.IdleDetector for testing.
@@ -220,7 +222,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		api.WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
 		err := RunPoll()
 		if err == nil {
@@ -235,7 +237,7 @@ func TestRunPoll_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
-		writeConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
+		api.WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 		creds := map[string]string{"api_key": "sk_live_test"}
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
