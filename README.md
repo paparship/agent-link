@@ -28,6 +28,8 @@ make install BINDIR=~/.local/bin
 
 ## Deploy the Server
 
+See [docs/deploy-server.md](docs/deploy-server.md) for the full systemd-based guide.
+
 Requires Redis. Configure via environment variables:
 
 ```bash
@@ -57,18 +59,22 @@ Creates `main/` and `worker/` directories, each with `.agentlink.toml` + `CLAUDE
 ### Messages
 
 ```bash
-agentlink send <target> <content>        # send
-agentlink pull [--all]                    # receive
+agentlink send [--interrupt] <target> <content>   # send (--interrupt wakes a busy agent)
+agentlink pull [--all]                             # receive
+agentlink message status <id>                      # check delivery status
 ```
+
+`send` prints a recipient status panel showing whether the target is idle, busy (with current task + duration), or offline, plus the unread inbox depth. The message ID is shown on success for later status queries.
 
 ### Tasks
 
 ```bash
-agentlink task send <target> <id> "<content>"    # assign
-agentlink task result <id> <status> "<result>"    # report
-agentlink task resume <id> "<guidance>"           # resume
-agentlink task cancel <id>                        # cancel
-agentlink task status <id>                        # check
+agentlink task send [--interrupt] <target> [<task_id>] "<content>"   # assign
+agentlink task result <task_id> <status> "<result>"                   # report
+agentlink task resume <task_id> "<guidance>"                          # resume
+agentlink task cancel <task_id>                                       # cancel
+agentlink task status <task_id>                                       # check
+agentlink task list                                                   # list this device's tasks
 ```
 
 ### Device & Sessions
@@ -78,7 +84,8 @@ agentlink ping                    # heartbeat (mark online)
 agentlink list [--all]            # list devices
 agentlink session add|remove <n>  # manage sessions
 agentlink attach <session>        # enter a session
-agentlink uninstall                # unregister device + clean up
+agentlink resume                  # restore tmux + poller sessions after reboot
+agentlink uninstall               # unregister device + clean up
 agentlink poll                    # run poller in foreground
 ```
 
@@ -88,8 +95,31 @@ Each session has a background poller started by `init`:
 
 - Polls inbox every 5 seconds
 - Injects new messages automatically when the agent is idle
+- Injected messages carry a `[from device:session]` header so the agent can distinguish them from user input
+- Sends a heartbeat every ~60s to keep the device marked online
+- Auto-accepts the Claude Code trust prompt on first launch
 - Skips when the agent is busy (generating / user is typing)
 - Silently skips when pane capture fails
+
+### Recovery After Reboot
+
+`agentlink resume` rebuilds tmux sessions and pollers from the on-disk config, without re-registering the device. Run it after a machine restart:
+
+```bash
+agentlink resume
+```
+
+Each session's Claude Code is resumed to its last recorded `session_id` (saved in `~/.agentlink/config.toml` under `[sessions]`). For configs created before this feature, `--continue` is used as a fallback.
+
+## Data Retention
+
+Redis data is TTL-bounded to prevent unbounded growth:
+
+| Data | TTL |
+|------|-----|
+| Inbox messages (unread) | 7 days |
+| Delivered message records | 24 hours |
+| Completed task records | 30 days |
 
 ## Architecture
 
