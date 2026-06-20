@@ -5,3 +5,6 @@
 /tmp/
 *-linux
 /bin/
+deploy/server
+deploy/agentlink
+deploy/server.log

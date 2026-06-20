@@ -1,0 +1,18 @@
+[Unit]
+Description=Agent Link Server
+After=network.target redis.service
+Requires=redis.service
+
+[Service]
+Type=simple
+User=agent-link
+WorkingDirectory=/opt/agent-link
+ExecStart=/opt/agent-link/server
+Environment=LISTEN_ADDR=:8080
+Environment=REDIS_ADDR=localhost:6379
+EnvironmentFile=/etc/agent-link/server.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
