@@ -179,6 +179,73 @@ func TestList(t *testing.T) {
 		}
 	})
 
+	t.Run("session_status current field", func(t *testing.T) {
+		ctx := context.Background()
+		// Device with: idle session, task session, msg session, offline session
+		setupAgent(t, "list-status", []string{"idle-s", "task-s", "msg-s", "offline-s"}, now)
+		defer cleanupAgent(t, "list-status")
+		t.Cleanup(func() {
+			testRdb.Del(ctx, "agentlink:task:t-status-task")
+			testRdb.Del(ctx, "agentlink:tasks:list-status:task-s")
+			testRdb.Del(ctx, "agentlink:current_msg:list-status:msg-s")
+		})
+
+		// task-s: in_progress task
+		testRdb.HSet(ctx, "agentlink:task:t-status-task",
+			"task_id", "t-status-task", "status", "in_progress",
+			"title", "诊断bug", "issued_at", now.Format(time.RFC3339))
+		testRdb.SAdd(ctx, "agentlink:tasks:list-status:task-s", "t-status-task")
+
+		// msg-s: current_msg set
+		testRdb.HSet(ctx, "agentlink:current_msg:list-status:msg-s",
+			"title", "通知", "started_at", now.Format(time.RFC3339))
+		testRdb.Expire(ctx, "agentlink:current_msg:list-status:msg-s", 10*time.Minute)
+
+		// offline-s: no special state, but device is online (last_seen=now),
+		// so offline-s will show "idle" not "offline". To test offline we
+		// need a separate device with stale heartbeat — covered by list-offline.
+
+		req, _ := http.NewRequest("GET", ts.URL+"/agents/list?all=true", nil)
+		req.Header.Set("Authorization", "Bearer "+onlineKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		var lr ListResponse
+		json.NewDecoder(resp.Body).Decode(&lr)
+
+		var target *AgentInfo
+		for i := range lr.Agents {
+			if lr.Agents[i].Device == "list-status" {
+				target = &lr.Agents[i]
+				break
+			}
+		}
+		if target == nil {
+			t.Fatal("list-status device not found in response")
+		}
+
+		currentBySession := map[string]string{}
+		for _, ss := range target.SessionStatus {
+			currentBySession[ss.Name] = ss.Current
+		}
+
+		if c := currentBySession["idle-s"]; c != "idle" {
+			t.Errorf("idle-s: expected current=idle, got %q", c)
+		}
+		if c := currentBySession["task-s"]; !strings.HasPrefix(c, "task: 诊断bug (") {
+			t.Errorf("task-s: expected current to start with 'task: 诊断bug (', got %q", c)
+		}
+		if c := currentBySession["msg-s"]; !strings.HasPrefix(c, "msg: 通知 (") {
+			t.Errorf("msg-s: expected current to start with 'msg: 通知 (', got %q", c)
+		}
+		if c := currentBySession["offline-s"]; c != "idle" {
+			t.Errorf("offline-s (device online, session idle): expected current=idle, got %q", c)
+		}
+	})
+
 	t.Run("list no auth returns 401", func(t *testing.T) {
 		resp, err := http.Get(ts.URL + "/agents/list")
 		if err != nil {

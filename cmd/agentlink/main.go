@@ -34,8 +34,6 @@ func main() {
 		cmdList(os.Args[2:])
 	case "session":
 		cmdSession(os.Args[2:])
-	case "message":
-		cmdMessage(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
 	case "resume":
@@ -54,18 +52,17 @@ func printUsage() {
 
 Usage:
   agentlink init --server <url> --password <pw> [--device <name>] [./path]
-  agentlink send [--interrupt] <target> <content>
+  agentlink send [--interrupt] [--title <title>] <target> <content>
   agentlink pull [--all]
   agentlink ping
   agentlink list [--all]
   agentlink poll
-  agentlink task send [--interrupt] <target> <task_id> <content>
+  agentlink task send [--interrupt] [--title <title>] <target> [<task_id>] <content>
   agentlink task result <task_id> <status> <result>
   agentlink task resume <task_id> <guidance>
   agentlink task cancel <task_id>
   agentlink task status <task_id>
   agentlink task list
-  agentlink message status <id>
   agentlink session add|remove <name>
   agentlink attach <session>
   agentlink resume
@@ -124,17 +121,18 @@ func cmdInit(args []string) {
 func cmdSend(args []string) {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	interrupt := fs.Bool("interrupt", false, "Interrupt the target if busy")
+	title := fs.String("title", "", "Short title shown in recipient status (default: first 40 chars of content)")
 	fs.Parse(args)
 
 	rest := fs.Args()
 	if len(rest) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink send [--interrupt] <target> <content>")
+		fmt.Fprintln(os.Stderr, "usage: agentlink send [--interrupt] [--title <title>] <target> <content>")
 		os.Exit(1)
 	}
 	target := rest[0]
 	content := strings.Join(rest[1:], " ")
 
-	if err := api.RunSend(target, content, *interrupt); err != nil {
+	if err := api.RunSend(target, content, *interrupt, *title); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
@@ -176,27 +174,6 @@ func cmdList(args []string) {
 	}
 }
 
-func cmdMessage(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink message status <id>")
-		os.Exit(1)
-	}
-	switch args[0] {
-	case "status":
-		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: agentlink message status <id>")
-			os.Exit(1)
-		}
-		if err := api.RunMessageStatus(args[1]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-			os.Exit(1)
-		}
-	default:
-		fmt.Fprintf(os.Stderr, "unknown message subcommand: %s\n", args[0])
-		os.Exit(1)
-	}
-}
-
 func cmdTask(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: agentlink task <subcommand> [args]")
@@ -224,11 +201,12 @@ func cmdTask(args []string) {
 func cmdTaskSend(args []string) {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	interrupt := fs.Bool("interrupt", false, "Interrupt the target if busy")
+	title := fs.String("title", "", "Short title shown in recipient status (default: task_id)")
 	fs.Parse(args)
 
 	rest := fs.Args()
 	if len(rest) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink task send [--interrupt] <target> [<task_id>] <content>")
+		fmt.Fprintln(os.Stderr, "usage: agentlink task send [--interrupt] [--title <title>] <target> [<task_id>] <content>")
 		fmt.Fprintln(os.Stderr, "  with task_id: agentlink task send --interrupt worker my-id \"do something\"")
 		fmt.Fprintln(os.Stderr, "  without:      agentlink task send --interrupt worker \"do something\"")
 		os.Exit(1)
@@ -243,7 +221,7 @@ func cmdTaskSend(args []string) {
 		content = strings.Join(rest[2:], " ")
 	}
 
-	if err := api.RunTaskSend(target, taskID, content, *interrupt); err != nil {
+	if err := api.RunTaskSend(target, taskID, content, *interrupt, *title); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

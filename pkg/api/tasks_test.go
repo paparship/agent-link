@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestTasks(t *testing.T) {
@@ -91,6 +93,10 @@ func TestTasks(t *testing.T) {
 		if content != "fix login bug" {
 			t.Errorf("content mismatch: %s", content)
 		}
+		title, _ := testRdb.HGet(ctx, "agentlink:task:t-send-ok", "title").Result()
+		if title != "t-send-ok" {
+			t.Errorf("expected default title=t-send-ok, got %s", title)
+		}
 		ttl, _ := testRdb.TTL(ctx, "agentlink:task:t-send-ok").Result()
 		if ttl <= 0 {
 			t.Error("expected positive TTL for task record")
@@ -112,12 +118,46 @@ func TestTasks(t *testing.T) {
 		if msg.TaskID != "t-send-ok" {
 			t.Errorf("expected task_id=t-send-ok, got %s", msg.TaskID)
 		}
+		if msg.Title != "t-send-ok" {
+			t.Errorf("expected inbox title=t-send-ok, got %s", msg.Title)
+		}
 		if msg.Content != "fix login bug" {
 			t.Errorf("expected content=fix login bug, got %s", msg.Content)
 		}
 
 		// Cleanup
 		testRdb.Del(ctx, "agentlink:task:t-send-ok")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+	})
+
+	t.Run("send with explicit title", func(t *testing.T) {
+		cleanInbox()
+
+		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-title","title":"诊断登录bug","content":"fix login bug"}`
+		resp, err := doReq("POST", "/tasks/send", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		title, _ := testRdb.HGet(ctx, "agentlink:task:t-title", "title").Result()
+		if title != "诊断登录bug" {
+			t.Errorf("expected title=诊断登录bug, got %s", title)
+		}
+
+		data, _ := testRdb.LIndex(ctx, "agentlink:inbox:task-test:worker", 0).Result()
+		var msg Message
+		json.Unmarshal([]byte(data), &msg)
+		if msg.Title != "诊断登录bug" {
+			t.Errorf("expected inbox title=诊断登录bug, got %s", msg.Title)
+		}
+
+		// Cleanup
+		testRdb.Del(ctx, "agentlink:task:t-title")
 		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
 	})
 
@@ -381,6 +421,85 @@ func TestTasks(t *testing.T) {
 		}
 		if pr.Items[0].Type != "msg" {
 			t.Errorf("expected type=msg, got %s", pr.Items[0].Type)
+		}
+	})
+
+	t.Run("pull msg sets current_msg", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:current_msg:task-test:worker")
+
+		msg := Message{ID: "cm-msg", Type: "msg", FromDevice: "task-test", FromSession: "main", Title: "通知标题", Content: "hello", CreatedAt: "2026-01-01T00:00:00Z"}
+		data, _ := json.Marshal(msg)
+		testRdb.LPush(ctx, "agentlink:inbox:task-test:worker", data)
+		t.Cleanup(func() {
+			testRdb.Del(ctx, "agentlink:inbox:task-test:worker")
+			testRdb.Del(ctx, "agentlink:current_msg:task-test:worker")
+		})
+
+		resp, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		title, _ := testRdb.HGet(ctx, "agentlink:current_msg:task-test:worker", "title").Result()
+		if title != "通知标题" {
+			t.Errorf("expected current_msg title=通知标题, got %q", title)
+		}
+		startedAt, _ := testRdb.HGet(ctx, "agentlink:current_msg:task-test:worker", "started_at").Result()
+		if startedAt == "" {
+			t.Error("expected non-empty started_at")
+		}
+		ttl, _ := testRdb.TTL(ctx, "agentlink:current_msg:task-test:worker").Result()
+		if ttl <= 0 || ttl > 10*time.Minute {
+			t.Errorf("expected TTL <= 10m, got %v", ttl)
+		}
+	})
+
+	t.Run("pull empty clears current_msg", func(t *testing.T) {
+		cleanInbox()
+		// Pre-set current_msg from a prior pull
+		testRdb.HSet(ctx, "agentlink:current_msg:task-test:worker", "title", "old", "started_at", "2026-01-01T00:00:00Z")
+		t.Cleanup(func() { testRdb.Del(ctx, "agentlink:current_msg:task-test:worker") })
+
+		resp, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		exists, _ := testRdb.Exists(ctx, "agentlink:current_msg:task-test:worker").Result()
+		if exists != 0 {
+			t.Error("expected current_msg cleared on empty pull")
+		}
+	})
+
+	t.Run("pull task does not set current_msg", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:current_msg:task-test:worker")
+
+		// Send a real task so task record exists for auto in_progress
+		body := `{"to":"task-test:worker","from_session":"main","task_id":"t-cm-task","content":"do thing"}`
+		resp0, err := doReq("POST", "/tasks/send", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp0.Body.Close()
+		t.Cleanup(func() {
+			testRdb.Del(ctx, "agentlink:task:t-cm-task")
+			testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+			testRdb.Del(ctx, "agentlink:current_msg:task-test:worker")
+		})
+
+		resp, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+
+		exists, _ := testRdb.Exists(ctx, "agentlink:current_msg:task-test:worker").Result()
+		if exists != 0 {
+			t.Error("expected current_msg NOT set for task pull")
 		}
 	})
 
@@ -964,6 +1083,224 @@ func TestTasks(t *testing.T) {
 		if !taskIDs["t-list-1"] || !taskIDs["t-list-2"] {
 			t.Errorf("expected both tasks in list, got %v", taskIDs)
 		}
+	})
+
+	// ===================== Concurrent send (atomicity) =====================
+
+	t.Run("concurrent send only one succeeds", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+
+		const N = 10
+		var wg sync.WaitGroup
+		wg.Add(N)
+		results := make([]int, N) // 1=200, 0=409, -1=other
+
+		var mu sync.Mutex
+		var firstErr string
+
+		for i := 0; i < N; i++ {
+			i := i
+			go func() {
+				defer wg.Done()
+				body := fmt.Sprintf(`{"to":"task-test:worker","from_session":"main","task_id":"t-concurrent-%d","content":"race"}`, i)
+				resp, err := doReq("POST", "/tasks/send", body)
+				if err != nil {
+					mu.Lock()
+					if firstErr == "" {
+						firstErr = err.Error()
+					}
+					mu.Unlock()
+					results[i] = -1
+					return
+				}
+				defer resp.Body.Close()
+				switch resp.StatusCode {
+				case http.StatusOK:
+					results[i] = 1
+				case http.StatusConflict:
+					results[i] = 0
+				default:
+					results[i] = -1
+				}
+			}()
+		}
+		wg.Wait()
+
+		if firstErr != "" {
+			t.Fatalf("unexpected error: %s", firstErr)
+		}
+
+		successes := 0
+		rejections := 0
+		for _, r := range results {
+			if r == 1 {
+				successes++
+			} else if r == 0 {
+				rejections++
+			} else {
+				t.Errorf("unexpected status code in goroutine %d", r)
+			}
+		}
+		if successes != 1 {
+			t.Errorf("expected exactly 1 success, got %d (rejections=%d)", successes, rejections)
+		}
+		if rejections != N-1 {
+			t.Errorf("expected %d rejections, got %d", N-1, rejections)
+		}
+
+		// Verify only one task record in Redis
+		keys, _ := testRdb.Keys(ctx, "agentlink:task:t-concurrent-*").Result()
+		if len(keys) != 1 {
+			t.Errorf("expected 1 task record, got %d: %v", len(keys), keys)
+		}
+
+		// Cleanup
+		for _, k := range keys {
+			testRdb.Del(ctx, k)
+		}
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+	})
+
+	t.Run("busy on issued blocks new task", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+
+		// First task succeeds (status=issued)
+		body1 := `{"to":"task-test:worker","from_session":"main","task_id":"t-issued-1","content":"first"}`
+		resp1, err := doReq("POST", "/tasks/send", body1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp1.Body.Close()
+		if resp1.StatusCode != http.StatusOK {
+			t.Fatalf("first send expected 200, got %d", resp1.StatusCode)
+		}
+
+		// Second task should be rejected because first is still issued
+		body2 := `{"to":"task-test:worker","from_session":"main","task_id":"t-issued-2","content":"second"}`
+		resp2, err := doReq("POST", "/tasks/send", body2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusConflict {
+			t.Errorf("expected 409 for second task while first is issued, got %d", resp2.StatusCode)
+		}
+
+		// Cleanup
+		testRdb.Del(ctx, "agentlink:task:t-issued-1", "agentlink:task:t-issued-2")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+	})
+
+	// ===================== Interrupt suspends in_progress task =====================
+
+	t.Run("interrupt msg suspends in_progress task", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+
+		// Send task and pull to make it in_progress
+		body1 := `{"to":"task-test:worker","from_session":"main","task_id":"t-int-target","content":"long task"}`
+		resp1, err := doReq("POST", "/tasks/send", body1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp1.Body.Close()
+
+		resp2, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp2.Body.Close()
+
+		status, _ := testRdb.HGet(ctx, "agentlink:task:t-int-target", "status").Result()
+		if status != "in_progress" {
+			t.Fatalf("expected task in_progress after pull, got %s", status)
+		}
+
+		// Send interrupt msg
+		body2 := `{"to":"task-test:worker","from_session":"main","interrupt":true,"content":"stop now"}`
+		resp3, err := doReq("POST", "/messages/send", body2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp3.Body.Close()
+		if resp3.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for interrupt msg, got %d", resp3.StatusCode)
+		}
+
+		// Original task should be suspended
+		status, _ = testRdb.HGet(ctx, "agentlink:task:t-int-target", "status").Result()
+		if status != "suspended" {
+			t.Errorf("expected original task suspended after interrupt, got %s", status)
+		}
+
+		// Cleanup
+		testRdb.Del(ctx, "agentlink:task:t-int-target")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+	})
+
+	t.Run("interrupt task suspends in_progress task and enters inbox", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+
+		// First task → in_progress
+		body1 := `{"to":"task-test:worker","from_session":"main","task_id":"t-int-orig","content":"long task"}`
+		resp1, err := doReq("POST", "/tasks/send", body1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp1.Body.Close()
+
+		resp2, err := doReq("GET", "/inbox/pull?session=worker&limit=1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp2.Body.Close()
+
+		// Interrupt task should succeed (not 409) and suspend original
+		body2 := `{"to":"task-test:worker","from_session":"main","task_id":"t-int-urgent","interrupt":true,"content":"urgent fix"}`
+		resp3, err := doReq("POST", "/tasks/send", body2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp3.Body.Close()
+		if resp3.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200 for interrupt task, got %d", resp3.StatusCode)
+		}
+
+		origStatus, _ := testRdb.HGet(ctx, "agentlink:task:t-int-orig", "status").Result()
+		if origStatus != "suspended" {
+			t.Errorf("expected original task suspended, got %s", origStatus)
+		}
+
+		urgentStatus, _ := testRdb.HGet(ctx, "agentlink:task:t-int-urgent", "status").Result()
+		if urgentStatus != "issued" {
+			t.Errorf("expected urgent task issued, got %s", urgentStatus)
+		}
+
+		// Cleanup
+		testRdb.Del(ctx, "agentlink:task:t-int-orig", "agentlink:task:t-int-urgent")
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+	})
+
+	t.Run("interrupt msg with no in_progress task succeeds", func(t *testing.T) {
+		cleanInbox()
+		testRdb.Del(ctx, "agentlink:tasks:task-test:worker")
+
+		// No task in progress, interrupt msg should still work
+		body := `{"to":"task-test:worker","from_session":"main","interrupt":true,"content":"urgent"}`
+		resp, err := doReq("POST", "/messages/send", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+
+		// Cleanup
+		testRdb.Del(ctx, "agentlink:inbox:task-test:worker")
 	})
 
 }

@@ -77,6 +77,13 @@ func (p *Poller) Run() error {
 				if msg.Type == "msg" {
 					prefix := fmt.Sprintf("[来自 %s:%s 的消息] ", msg.FromDevice, msg.FromSession)
 					injectContent = prefix + msg.Content
+				} else if msg.Type == "task" {
+					injectContent = fmt.Sprintf(
+						"[来自 %s:%s 的任务 %s]\n%s\n完成后请执行: agentlink task result %s completed \"<结果>\"\n如需挂起: agentlink task result %s suspended \"<原因>\"",
+						msg.FromDevice, msg.FromSession, msg.TaskID,
+						msg.Content,
+						msg.TaskID, msg.TaskID,
+					)
 				}
 				fmt.Fprintf(p.Stdout, "inject: %s\n", injectContent)
 				if err := p.sendKeys(p.Session, injectContent); err != nil {
@@ -117,6 +124,7 @@ type pollerInboxItem struct {
 	FromDevice  string `json:"from_device"`
 	FromSession string `json:"from_session"`
 	TaskID      string `json:"task_id,omitempty"`
+	Title       string `json:"title,omitempty"`
 	Interrupt   bool   `json:"interrupt,omitempty"`
 }
 
