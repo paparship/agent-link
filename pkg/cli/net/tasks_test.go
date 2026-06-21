@@ -71,7 +71,7 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunTaskSend("worker", "001", "fix login bug", false); err != nil {
+		if err := RunTaskSend("worker", "001", "fix login bug", false, ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -105,7 +105,7 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunTaskSend("other-dev:reviewer", "002", "review code", false); err != nil {
+		if err := RunTaskSend("other-dev:reviewer", "002", "review code", false, ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -134,7 +134,7 @@ func TestRunTaskSend(t *testing.T) {
 		defer os.Chdir(origWd)
 
 		content := "fix the login bug and add tests"
-		if err := RunTaskSend("worker", "003", content, false); err != nil {
+		if err := RunTaskSend("worker", "003", content, false, ""); err != nil {
 			t.Fatal(err)
 		}
 		if captured.content != content {
@@ -162,7 +162,7 @@ func TestRunTaskSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		err := RunTaskSend("worker", "001", "test", false)
+		err := RunTaskSend("worker", "001", "test", false, "")
 		if err != nil {
 			t.Errorf("expected no error for 409 with status, got: %s", err)
 		}
@@ -174,7 +174,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunTaskSend("worker", "001", "hi", false)
+		err := RunTaskSend("worker", "001", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -189,7 +189,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
 		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
-		err := RunTaskSend("worker", "001", "hi", false)
+		err := RunTaskSend("worker", "001", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -207,7 +207,7 @@ func TestRunTaskSend_errors(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
 
-		err := RunTaskSend("worker", "001", "hi", false)
+		err := RunTaskSend("worker", "001", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}

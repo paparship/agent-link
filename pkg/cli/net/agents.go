@@ -22,11 +22,17 @@ func RunPing() error {
 	return nil
 }
 
+type sessionInfo struct {
+	Name    string `json:"name"`
+	Current string `json:"current"`
+}
+
 type agentInfo struct {
-	Device   string   `json:"device"`
-	Sessions []string `json:"sessions"`
-	LastSeen string   `json:"last_seen"`
-	Online   bool     `json:"online"`
+	Device        string        `json:"device"`
+	Sessions      []string      `json:"sessions"`
+	SessionStatus []sessionInfo `json:"session_status"`
+	LastSeen      string        `json:"last_seen"`
+	Online        bool          `json:"online"`
 }
 
 type agentListResponse struct {
@@ -72,6 +78,9 @@ func RunList(all bool) error {
 		fmt.Printf("Status:     %s\n", status)
 		if a.LastSeen != "" {
 			fmt.Printf("Last seen:  %s\n", a.LastSeen)
+		}
+		for _, ss := range a.SessionStatus {
+			fmt.Printf("  %-10s %s\n", ss.Name, ss.Current)
 		}
 	}
 

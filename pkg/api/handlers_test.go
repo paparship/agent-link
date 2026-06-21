@@ -385,8 +385,92 @@ func TestMessages(t *testing.T) {
 		if msg.Content != "hello" {
 			t.Errorf("expected content=hello, got %s", msg.Content)
 		}
+		if msg.Title != "hello" {
+			t.Errorf("expected default title=hello, got %s", msg.Title)
+		}
 		if msg.CreatedAt == "" {
 			t.Error("created_at should not be empty")
+		}
+	})
+
+	t.Run("send with explicit title", func(t *testing.T) {
+		body := `{"to":"msg-test:worker","from_session":"main","title":"紧急通知","content":"hello"}`
+		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		data, _ := testRdb.LIndex(ctx, "agentlink:inbox:msg-test:worker", 0).Result()
+		var msg Message
+		json.Unmarshal([]byte(data), &msg)
+		if msg.Title != "紧急通知" {
+			t.Errorf("expected title=紧急通知, got %s", msg.Title)
+		}
+	})
+
+	t.Run("send default title truncates long content", func(t *testing.T) {
+		longContent := strings.Repeat("a", 50)
+		body := fmt.Sprintf(`{"to":"msg-test:worker","from_session":"main","content":"%s"}`, longContent)
+		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("expected 200, got %d", resp.StatusCode)
+		}
+
+		data, _ := testRdb.LIndex(ctx, "agentlink:inbox:msg-test:worker", 0).Result()
+		var msg Message
+		json.Unmarshal([]byte(data), &msg)
+		expected := strings.Repeat("a", 40) + "..."
+		if msg.Title != expected {
+			t.Errorf("expected truncated title %q, got %q", expected, msg.Title)
+		}
+	})
+
+	t.Run("send does not persist msg record", func(t *testing.T) {
+		body := `{"to":"msg-test:worker","from_session":"main","content":"no persist"}`
+		req, _ := http.NewRequest("POST", ts.URL+"/messages/send", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var sr SendResponse
+		json.NewDecoder(resp.Body).Decode(&sr)
+
+		// No agentlink:msg:<id> key should exist (msg is fire-and-forget)
+		exists, _ := testRdb.Exists(ctx, "agentlink:msg:"+sr.ID).Result()
+		if exists != 0 {
+			t.Errorf("expected no msg record for id %s, but key exists", sr.ID)
+		}
+	})
+
+	t.Run("messages status route removed", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", ts.URL+"/messages/status?id=whatever", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("expected 404 for removed /messages/status route, got %d", resp.StatusCode)
 		}
 	})
 

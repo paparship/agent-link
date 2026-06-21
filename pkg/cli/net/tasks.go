@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func RunTaskSend(target, taskID, content string, interrupt bool) error {
+func RunTaskSend(target, taskID, content string, interrupt bool, title string) error {
 	cfg, creds, err := LoadAuth()
 	if err != nil {
 		return err
@@ -28,6 +28,7 @@ func RunTaskSend(target, taskID, content string, interrupt bool) error {
 		"to":           target,
 		"from_session": session,
 		"task_id":      taskID,
+		"title":        title,
 		"content":      content,
 		"interrupt":    interrupt,
 	})

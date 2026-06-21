@@ -73,7 +73,7 @@ func TestRunSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunSend("worker", "hello", false); err != nil {
+		if err := RunSend("worker", "hello", false, ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -103,7 +103,7 @@ func TestRunSend(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		if err := RunSend("other-dev:reviewer", "hi there", false); err != nil {
+		if err := RunSend("other-dev:reviewer", "hi there", false, ""); err != nil {
 			t.Fatal(err)
 		}
 
@@ -128,7 +128,7 @@ func TestRunSend(t *testing.T) {
 		defer os.Chdir(origWd)
 
 		content := "line one\nline two\nline three"
-		if err := RunSend("worker", content, false); err != nil {
+		if err := RunSend("worker", content, false, ""); err != nil {
 			t.Fatal(err)
 		}
 		if captured.content != content {
@@ -142,7 +142,7 @@ func TestRunSend_errors(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunSend("worker", "hi", false)
+		err := RunSend("worker", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -157,7 +157,7 @@ func TestRunSend_errors(t *testing.T) {
 		os.MkdirAll(filepath.Join(homeDir, ".agentlink"), 0755)
 		WriteConfigTOML(filepath.Join(homeDir, ".agentlink", "config.toml"), "http://localhost:1", "test-dev", homeDir, "claude", false, nil)
 
-		err := RunSend("worker", "hi", false)
+		err := RunSend("worker", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -175,7 +175,7 @@ func TestRunSend_errors(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(homeDir, ".agentlink", "credentials.json"), credData, 0600)
 
-		err := RunSend("worker", "hi", false)
+		err := RunSend("worker", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -196,7 +196,7 @@ func TestRunSend_errors(t *testing.T) {
 		os.Chdir(sessionDir)
 		defer os.Chdir(origWd)
 
-		err := RunSend("worker", "hi", false)
+		err := RunSend("worker", "hi", false, "")
 		if err == nil {
 			t.Fatal("expected error")
 		}
