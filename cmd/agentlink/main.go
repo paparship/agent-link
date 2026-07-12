@@ -38,7 +38,7 @@ func main() {
 		cmdSession(os.Args[2:])
 	case "attach":
 		cmdAttach(os.Args[2:])
-	case "resume":
+	case "restart":
 		cmdResume(os.Args[2:])
 	case "uninstall":
 		cmdUninstall()
@@ -69,7 +69,7 @@ Usage:
   agentlink task list
   agentlink session add|remove <name>
   agentlink attach <session>
-  agentlink resume
+  agentlink restart
   agentlink uninstall
 `)
 }

@@ -82,7 +82,7 @@ func RunTaskSend(target, taskID, content string, interrupt bool, title string) e
 
 	fmt.Printf("✓ Task %s sent to %s\n", taskID, target)
 	displayRecipientStatus(sendResp.RecipientStatus)
-
+	fmt.Print("  Result will be delivered via notification when done — no need to poll.\n")
 	return nil
 }
 
