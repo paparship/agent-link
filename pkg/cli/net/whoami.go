@@ -92,12 +92,16 @@ func RunWhoami() error {
 	fmt.Println("  task — need a result back (completed/suspended)")
 	fmt.Println("  msg  — fire-and-forget, no reply needed")
 	fmt.Println()
-	fmt.Println("Commands:")
+	fmt.Println("Commands (for agent use):")
 	fmt.Println("  agentlink task send <target> <id> \"<content>\"      — issue task (need result)")
 	fmt.Println("  agentlink task result <id> completed \"<msg>\"        — report result (worker)")
 	fmt.Println("  agentlink task status <id>                           — task detail")
 	fmt.Println("  agentlink task list                                  — full task list")
+	fmt.Println("  agentlink session add <name>                         — create new agent session")
+	fmt.Println("  agentlink session remove <name>                      — remove agent session")
 	fmt.Println("  agentlink list --all                                 — team devices")
 	fmt.Println("  agentlink send [--interrupt] <target> \"<msg>\"       — send msg (no reply)")
+	fmt.Println()
+	fmt.Println("User-only (do NOT run): init, install, uninstall, restart, attach")
 	return nil
 }
