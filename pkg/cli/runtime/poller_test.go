@@ -74,6 +74,66 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 	}
 }
 
+func TestPoller_injectsTaskWithGuidance(t *testing.T) {
+	taskContent := "查 prod 为什么 500"
+	taskID := "fix-001"
+
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(pollerPullResponse{
+			Items: []pollerInboxItem{
+				{ID: "t1", Type: "task", TaskID: taskID, Content: taskContent, FromDevice: "dev-a", FromSession: "main"},
+			},
+		})
+	}))
+	defer mockSrv.Close()
+
+	var injected string
+	captureCalls := 0
+	ctx, cancel := context.WithCancel(context.Background())
+
+	p := &Poller{
+		Session:      "worker",
+		Server:       mockSrv.URL,
+		APIKey:       "sk_test",
+		Interval:     10 * time.Millisecond,
+		Ctx:          ctx,
+		Stdout:       io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
+		capturePane: func(string) (string, error) {
+			captureCalls++
+			if captureCalls >= 3 {
+				cancel()
+			}
+			return "❯\n", nil
+		},
+		sendKeys: func(_ string, text string) error {
+			injected = text
+			return nil
+		},
+		httpDo: http.DefaultClient.Do,
+	}
+
+	p.Run()
+
+	// Check prefix
+	if !strings.Contains(injected, "[来自 dev-a:main 的任务 fix-001]") {
+		t.Errorf("injected missing task prefix, got: %s", injected)
+	}
+	// Check content preserved
+	if !strings.Contains(injected, taskContent) {
+		t.Errorf("injected missing task content, got: %s", injected)
+	}
+	// Check completed guidance
+	if !strings.Contains(injected, "agentlink task result fix-001 completed") {
+		t.Errorf("injected missing completed guidance, got: %s", injected)
+	}
+	// Check suspended guidance
+	if !strings.Contains(injected, "agentlink task result fix-001 suspended") {
+		t.Errorf("injected missing suspended guidance, got: %s", injected)
+	}
+}
+
 func TestPoller_skipsWhenBusy(t *testing.T) {
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

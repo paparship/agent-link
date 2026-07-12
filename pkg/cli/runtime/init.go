@@ -211,15 +211,17 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 			return nil, fmt.Errorf("cannot create tmux session %q: %w", session, err)
 		}
 
-		// Record Claude session_id (only meaningful for fresh launches; on
-		// resume the id is already in opts.Existing). For resume with empty
-		// id (--continue fallback), we still record whatever Claude writes
-		// so a subsequent resume can use --resume.
+		fmt.Printf("  %s — waiting for Claude to start", session)
 		id := opts.Existing[session]
 		if !opts.Resume || id == "" {
 			recorded[session] = readClaudeSessionIDWithTimeout(10 * time.Second)
 		} else {
 			recorded[session] = id
+		}
+		if recorded[session] != "" {
+			fmt.Println(" ✓")
+		} else {
+			fmt.Println(" (session_id unavailable, continue fallback)")
 		}
 
 		if !opts.NoPoll {

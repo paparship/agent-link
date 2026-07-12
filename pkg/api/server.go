@@ -36,6 +36,7 @@ func New(addr string, rdb *redis.Client, registerPassword string) *Server {
 	s.mux.HandleFunc("POST /tasks/result", s.handleTaskResult)
 	s.mux.HandleFunc("POST /tasks/resume", s.handleTaskResume)
 	s.mux.HandleFunc("POST /tasks/cancel", s.handleTaskCancel)
+	s.mux.HandleFunc("POST /tasks/reopen", s.handleTaskReopen)
 	s.mux.HandleFunc("GET /tasks/status", s.handleTaskStatus)
 	s.mux.HandleFunc("GET /tasks/list", s.handleTaskList)
 	s.mux.HandleFunc("POST /agents/heartbeat", s.handleHeartbeat)
@@ -43,6 +44,7 @@ func New(addr string, rdb *redis.Client, registerPassword string) *Server {
 	s.mux.HandleFunc("PATCH /agents/sessions", s.handlePatchSessions)
 	s.mux.HandleFunc("DELETE /agents/sessions", s.handleDeleteSession)
 	s.mux.HandleFunc("DELETE /agents/device", s.handleDeleteDevice)
+	s.mux.HandleFunc("GET /whoami", s.handleWhoami)
 
 	return s
 }

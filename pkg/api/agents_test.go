@@ -235,8 +235,8 @@ func TestList(t *testing.T) {
 		if c := currentBySession["idle-s"]; c != "idle" {
 			t.Errorf("idle-s: expected current=idle, got %q", c)
 		}
-		if c := currentBySession["task-s"]; !strings.HasPrefix(c, "task: 诊断bug (") {
-			t.Errorf("task-s: expected current to start with 'task: 诊断bug (', got %q", c)
+		if c := currentBySession["task-s"]; !strings.HasPrefix(c, "task: t-status-task 诊断bug (") {
+			t.Errorf("task-s: expected current to start with 'task: t-status-task 诊断bug (', got %q", c)
 		}
 		if c := currentBySession["msg-s"]; !strings.HasPrefix(c, "msg: 通知 (") {
 			t.Errorf("msg-s: expected current to start with 'msg: 通知 (', got %q", c)
@@ -256,6 +256,77 @@ func TestList(t *testing.T) {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
 		}
 	})
+}
+
+func TestWhoami(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now()
+
+	apiKey := setupAgent(t, "whoami-test", []string{"main", "worker"}, now)
+	defer cleanupAgent(t, "whoami-test")
+
+	doReq := func(method, path string) (*http.Response, error) {
+		req, _ := http.NewRequest(method, ts.URL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		return http.DefaultClient.Do(req)
+	}
+
+	// Setup a received task (in_progress so current shows "task:...")
+	testRdb.HSet(ctx, "agentlink:task:t-whoami-rec",
+		"task_id", "t-whoami-rec", "status", "in_progress",
+		"assigned_to", "whoami-test:main", "issued_by", "whoami-test:worker",
+		"title", "诊断bug", "content", "fix bug",
+		"issued_at", now.Format(time.RFC3339),
+	)
+	testRdb.Expire(ctx, "agentlink:task:t-whoami-rec", 7*24*3600)
+	testRdb.SAdd(ctx, "agentlink:tasks:whoami-test:main", "t-whoami-rec")
+	defer testRdb.Del(ctx, "agentlink:task:t-whoami-rec", "agentlink:tasks:whoami-test:main")
+
+	// Setup a sent task
+	testRdb.HSet(ctx, "agentlink:task:t-whoami-sent",
+		"task_id", "t-whoami-sent", "status", "issued",
+		"assigned_to", "whoami-test:worker", "issued_by", "whoami-test:main",
+		"title", "加监控", "content", "add monitoring",
+		"issued_at", now.Format(time.RFC3339),
+	)
+	testRdb.Expire(ctx, "agentlink:task:t-whoami-sent", 7*24*3600)
+	testRdb.SAdd(ctx, "agentlink:issued:whoami-test:main", "t-whoami-sent")
+	defer testRdb.Del(ctx, "agentlink:task:t-whoami-sent", "agentlink:issued:whoami-test:main")
+
+	resp, err := doReq("GET", "/whoami?session=main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var w struct {
+		Device        string `json:"device"`
+		Session       string `json:"session"`
+		Current       string `json:"current"`
+		Inbox         map[string]int `json:"inbox"`
+		ReceivedTasks []map[string]string `json:"received_tasks"`
+		SentTasks     []map[string]string `json:"sent_tasks"`
+	}
+	json.NewDecoder(resp.Body).Decode(&w)
+
+	if w.Device != "whoami-test" || w.Session != "main" {
+		t.Errorf("expected whoami-test:main, got %s:%s", w.Device, w.Session)
+	}
+
+	// Should see 1 sent task (in_progress → current = "task: ...")
+	if !strings.HasPrefix(w.Current, "task:") {
+		t.Errorf("expected current=task:..., got %s", w.Current)
+	}
+
+	if len(w.ReceivedTasks) != 1 || w.ReceivedTasks[0]["task_id"] != "t-whoami-rec" {
+		t.Errorf("expected 1 received task=t-whoami-rec, got %+v", w.ReceivedTasks)
+	}
+	if len(w.SentTasks) != 1 || w.SentTasks[0]["task_id"] != "t-whoami-sent" {
+		t.Errorf("expected 1 sent task=t-whoami-sent, got %+v", w.SentTasks)
+	}
 }
 
 func TestListOnlineDetection(t *testing.T) {

@@ -147,6 +147,25 @@ func RunTaskCancel(taskID string) error {
 	return nil
 }
 
+func RunTaskReopen(taskID, reason string) error {
+	cfg, creds, err := LoadAuth()
+	if err != nil {
+		return err
+	}
+
+	resp, err := APIDo(cfg, creds, "POST", "/tasks/reopen", map[string]string{
+		"task_id": taskID,
+		"reason":  reason,
+	})
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	fmt.Printf("✓ Task %s reopened\n", taskID)
+	return nil
+}
+
 func RunTaskList() error {
 	cfg, creds, err := LoadAuth()
 	if err != nil {
@@ -165,40 +184,46 @@ func RunTaskList() error {
 	}
 	defer resp.Body.Close()
 
+	type taskItem struct {
+		TaskID      string `json:"task_id"`
+		Status      string `json:"status"`
+		AssignedTo  string `json:"assigned_to"`
+		IssuedBy    string `json:"issued_by"`
+		Content     string `json:"content"`
+		Result      string `json:"result"`
+		IssuedAt    string `json:"issued_at"`
+		CompletedAt string `json:"completed_at"`
+	}
 	var result struct {
-		Tasks []struct {
-			TaskID      string `json:"task_id"`
-			Status      string `json:"status"`
-			AssignedTo  string `json:"assigned_to"`
-			IssuedBy    string `json:"issued_by"`
-			Content     string `json:"content"`
-			Result      string `json:"result"`
-			IssuedAt    string `json:"issued_at"`
-			CompletedAt string `json:"completed_at"`
-		} `json:"tasks"`
+		Received []taskItem `json:"received"`
+		Sent     []taskItem `json:"sent"`
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	if len(result.Tasks) == 0 {
+	if len(result.Received) == 0 && len(result.Sent) == 0 {
 		fmt.Println("No active tasks")
 		return nil
 	}
 
-	for _, t := range result.Tasks {
-		fmt.Printf("Task:      %s\n", t.TaskID)
-		fmt.Printf("Status:    %s\n", t.Status)
-		fmt.Printf("Assigned:  %s\n", t.AssignedTo)
-		fmt.Printf("Issued by: %s\n", t.IssuedBy)
-		fmt.Printf("Content:   %s\n", t.Content)
-		if t.Result != "" {
-			fmt.Printf("Result:    %s\n", t.Result)
+	printGroup := func(label string, items []taskItem) {
+		if len(items) == 0 {
+			return
 		}
-		fmt.Printf("Issued:    %s\n", t.IssuedAt)
-		if t.CompletedAt != "" {
-			fmt.Printf("Completed: %s\n", t.CompletedAt)
+		fmt.Printf("\n%s:\n", label)
+		for _, t := range items {
+			fmt.Printf("  %-12s  %-15s  %s", t.TaskID, t.Status, t.Content)
+			if len(t.Content) > 30 {
+				fmt.Printf("...")
+			}
+			if t.CompletedAt != "" {
+				fmt.Printf("  (completed)")
+			}
+			fmt.Println()
 		}
-		fmt.Println("---")
 	}
+
+	printGroup("Received tasks", result.Received)
+	printGroup("Sent tasks", result.Sent)
 
 	return nil
 }

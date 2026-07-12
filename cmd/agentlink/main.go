@@ -28,6 +28,8 @@ func main() {
 		cmdTask(os.Args[2:])
 	case "poll":
 		cmdPoll(os.Args[2:])
+	case "whoami":
+		cmdWhoami()
 	case "ping":
 		cmdPing()
 	case "list":
@@ -54,6 +56,7 @@ Usage:
   agentlink init --server <url> --password <pw> [--device <name>] [./path]
   agentlink send [--interrupt] [--title <title>] <target> <content>
   agentlink pull [--all]
+  agentlink whoami
   agentlink ping
   agentlink list [--all]
   agentlink poll
@@ -61,6 +64,7 @@ Usage:
   agentlink task result <task_id> <status> <result>
   agentlink task resume <task_id> <guidance>
   agentlink task cancel <task_id>
+  agentlink task reopen <task_id> <reason>
   agentlink task status <task_id>
   agentlink task list
   agentlink session add|remove <name>
@@ -188,6 +192,8 @@ func cmdTask(args []string) {
 		cmdTaskResume(args[1:])
 	case "cancel":
 		cmdTaskCancel(args[1:])
+	case "reopen":
+		cmdTaskReopen(args[1:])
 	case "status":
 		cmdTaskStatus(args[1:])
 	case "list":
@@ -269,6 +275,20 @@ func cmdTaskCancel(args []string) {
 	}
 }
 
+func cmdTaskReopen(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink task reopen <task_id> <reason>")
+		os.Exit(1)
+	}
+	taskID := args[0]
+	reason := strings.Join(args[1:], " ")
+
+	if err := api.RunTaskReopen(taskID, reason); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
 func cmdSession(args []string) {
 	if len(args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: agentlink session add|remove <name>")
@@ -309,6 +329,13 @@ func cmdSessionRemove(args []string) {
 	}
 }
 
+func cmdWhoami() {
+	if err := api.RunWhoami(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+}
+
 func cmdAttach(args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: agentlink attach <session>")
@@ -329,10 +356,7 @@ func cmdResume(args []string) {
 }
 
 func cmdUninstall() {
-	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
-	purge := fs.Bool("purge", false, "Also deregister from server")
-	fs.Parse(os.Args[2:])
-	if err := rt.RunUninstall(*purge); err != nil {
+	if err := rt.RunUninstall(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

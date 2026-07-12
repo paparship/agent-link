@@ -50,8 +50,10 @@ for _, tid in ipairs(redis.call('SMEMBERS', %s)) do
 end
 `
 
-// luaWriteTaskRecord writes the task Hash + tracking set + inbox push,
-// common tail of taskSendScript and interruptTaskSendScript.
+// luaWriteTaskRecord writes the task Hash + tracking set + issued index +
+// inbox push, common tail of taskSendScript and interruptTaskSendScript.
+//
+// KEYS[4] = agentlink:issued:<from_device>:<from_session> (issued reverse index)
 const luaWriteTaskRecord = `
 redis.call('HSET', KEYS[1],
   'task_id', ARGV[1],
@@ -63,6 +65,8 @@ redis.call('HSET', KEYS[1],
   'issued_at', ARGV[2])
 redis.call('EXPIRE', KEYS[1], 604800)
 redis.call('SADD', KEYS[2], ARGV[1])
+redis.call('SADD', KEYS[4], ARGV[1])
+redis.call('EXPIRE', KEYS[4], 604800)
 redis.call('LPUSH', KEYS[3], ARGV[7])
 redis.call('EXPIRE', KEYS[3], 604800)
 return {1, ''}
@@ -76,6 +80,7 @@ return {1, ''}
 // KEYS[1] = agentlink:task:<task_id>
 // KEYS[2] = agentlink:tasks:<device>:<session>
 // KEYS[3] = agentlink:inbox:<device>:<session>
+// KEYS[4] = agentlink:issued:<from_device>:<from_session>
 // ARGV[1] = task_id
 // ARGV[2] = now (RFC3339)
 // ARGV[3] = assigned_to
@@ -127,6 +132,7 @@ return 1
 // KEYS[1] = agentlink:task:<new_task_id>
 // KEYS[2] = agentlink:tasks:<device>:<session>
 // KEYS[3] = agentlink:inbox:<device>:<session>
+// KEYS[4] = agentlink:issued:<from_device>:<from_session>
 // ARGV[1] = task_id
 // ARGV[2] = now (RFC3339)
 // ARGV[3] = assigned_to
@@ -314,7 +320,7 @@ type SendResponse struct {
 type RecipientStatus struct {
 	Device  string `json:"device"`
 	Session string `json:"session"`
-	Current string `json:"current"` // "idle" / "msg: <title> (<dur>)" / "task: <title> (<dur>)" / "offline (<dur>)"
+	Current string `json:"current"` // "idle" / "msg: <title> (<dur>)" / "task: <task_id> <title> (<dur>)" / "offline (<dur>)"
 }
 
 type PullResponse struct {
@@ -343,6 +349,11 @@ type TaskResumeRequest struct {
 
 type TaskCancelRequest struct {
 	TaskID string `json:"task_id"`
+}
+
+type TaskReopenRequest struct {
+	TaskID string `json:"task_id"`
+	Reason string `json:"reason"`
 }
 
 type TaskStatusResponse struct {
@@ -485,7 +496,7 @@ func (s *Server) buildRecipientStatus(ctx context.Context, device, session strin
 			if t, err := time.Parse(time.RFC3339, issuedAt); err == nil {
 				dur = formatDuration(time.Since(t))
 			}
-			rs.Current = fmt.Sprintf("task: %s (%s)", title, dur)
+			rs.Current = fmt.Sprintf("task: %s %s (%s)", tid, title, dur)
 			return rs
 		}
 	}
@@ -784,7 +795,8 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	// processed the previous msg or we're about to hand it something new).
 	s.rdb.Del(r.Context(), currentMsgKey)
 
-	for i := 0; i < limit; i++ {
+	pulled := 0
+	for pulled < limit {
 		data, err := s.rdb.RPop(r.Context(), inboxKey).Result()
 		if err == redis.Nil {
 			break
@@ -796,20 +808,24 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		var msg Message
 		json.Unmarshal([]byte(data), &msg)
 
-		// Auto-set task to in_progress on pull
+		// Skip tasks that are no longer issued (cancelled/suspended/completed).
+		// The inbox item is stale — the task record is the source of truth.
+		// Skip without consuming limit so the agent still gets `limit` usable
+		// items.
 		if msg.Type == MsgTypeTask && msg.TaskID != "" {
 			taskKey := "agentlink:task:" + msg.TaskID
 			currentStatus, _ := s.rdb.HGet(r.Context(), taskKey, "status").Result()
-			if currentStatus == "issued" {
-				s.rdb.HSet(r.Context(), taskKey, "status", "in_progress")
+			if currentStatus != "issued" {
+				continue
 			}
+			s.rdb.HSet(r.Context(), taskKey, "status", "in_progress")
 		}
 
 		// Track current_msg for the first msg pulled this round, so
 		// buildRecipientStatus can report "msg: <title> (<dur>)" while the
 		// agent processes it. Task pulls don't set this (tasks have their
 		// own in_progress state).
-		if msg.Type == MsgTypeMsg && i == 0 {
+		if msg.Type == MsgTypeMsg && pulled == 0 {
 			title := msgTitle(msg.Title, msg.Content)
 			s.rdb.HSet(r.Context(), currentMsgKey,
 				"title", title,
@@ -819,6 +835,7 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		}
 
 		items = append(items, msg)
+		pulled++
 	}
 
 	writeJSON(w, http.StatusOK, PullResponse{Items: items})
@@ -903,6 +920,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	taskKey := "agentlink:task:" + req.TaskID
 	trackingKey := "agentlink:tasks:" + targetDevice + ":" + targetSession
 	inboxKey := "agentlink:inbox:" + targetDevice + ":" + targetSession
+	issuedKey := "agentlink:issued:" + fromDevice + ":" + req.FromSession
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	title := req.Title
@@ -931,7 +949,7 @@ func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {
 	if req.Interrupt {
 		script = interruptTaskSendScript
 	}
-	res, err := s.rdb.Eval(r.Context(), script, []string{taskKey, trackingKey, inboxKey},
+	res, err := s.rdb.Eval(r.Context(), script, []string{taskKey, trackingKey, inboxKey, issuedKey},
 		req.TaskID, now, req.To, fromDevice+":"+req.FromSession, req.Content, title, string(msgJSON),
 	).Result()
 	if err != nil {
@@ -1008,12 +1026,33 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove from tracking set
+	var assignedToDev, assignedToSess string
 	assignedTo, err := s.rdb.HGet(r.Context(), taskKey, "assigned_to").Result()
 	if err == nil {
 		parts := strings.SplitN(assignedTo, ":", 2)
 		if len(parts) == 2 {
 			s.rdb.SRem(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
+			assignedToDev, assignedToSess = parts[0], parts[1]
+		}
+	}
+
+
+	issuedBy, _ := s.rdb.HGet(r.Context(), taskKey, "issued_by").Result()
+	issuedParts := strings.SplitN(issuedBy, ":", 2)
+	if len(issuedParts) == 2 {
+		s.rdb.SRem(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], req.TaskID)
+
+		// Notify issuer (auto-notify, no extra agent action needed)
+		if assignedToDev != "" {
+			notifyInbox(r.Context(), s.rdb.Client, issuedParts[0], issuedParts[1], Message{
+				ID:          generateID(),
+				Type:        MsgTypeMsg,
+				FromDevice:  assignedToDev,
+				FromSession: assignedToSess,
+				Title:       "任务回报 " + req.TaskID,
+				Content:     req.Status + ": " + req.Result,
+				CreatedAt:   now,
+			})
 		}
 	}
 
@@ -1065,7 +1104,7 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	if err := s.rdb.HSet(r.Context(), taskKey,
-		"status", "in_progress",
+		"status", "issued",
 		"content", req.Content,
 		"issued_at", now, // Update issued_at to reflect new guidance
 		"result", "",
@@ -1075,14 +1114,18 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Re-add to tracking set
 	assignedTo := taskData["assigned_to"]
 	parts := strings.SplitN(assignedTo, ":", 2)
+	issuedParts := strings.SplitN(taskData["issued_by"], ":", 2)
+
 	if len(parts) == 2 {
 		s.rdb.SAdd(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
 	}
+	if len(issuedParts) == 2 {
+		s.rdb.SAdd(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], req.TaskID)
+		s.rdb.Expire(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], TaskTTL)
+	}
 
-	// Re-push to target inbox
 	id := generateID()
 	inboxItem := Message{
 		ID:          id,
@@ -1093,8 +1136,6 @@ func (s *Server) handleTaskResume(w http.ResponseWriter, r *http.Request) {
 		Content:     req.Content,
 		CreatedAt:   now,
 	}
-	// issued_by format: "agentlink:device:session"
-	issuedParts := strings.SplitN(taskData["issued_by"], ":", 2)
 	if len(issuedParts) == 2 {
 		inboxItem.FromDevice = issuedParts[0]
 		inboxItem.FromSession = issuedParts[1]
@@ -1145,16 +1186,132 @@ func (s *Server) handleTaskCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove from tracking set
+	var assignedToDev, assignedToSess string
 	assignedTo, err := s.rdb.HGet(r.Context(), taskKey, "assigned_to").Result()
 	if err == nil {
 		parts := strings.SplitN(assignedTo, ":", 2)
 		if len(parts) == 2 {
 			s.rdb.SRem(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
+			assignedToDev, assignedToSess = parts[0], parts[1]
 		}
 	}
 
+
+	issuedBy, _ := s.rdb.HGet(r.Context(), taskKey, "issued_by").Result()
+	issuedParts := strings.SplitN(issuedBy, ":", 2)
+	if len(issuedParts) == 2 {
+		s.rdb.SRem(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], req.TaskID)
+	}
+
+	// Notify target only if the task had been pulled (in_progress) or
+	// previously suspended — the recipient has context to understand the
+	// cancel. For issued tasks (still queued, never pulled), skip the
+	// notification: pull-side filtering drops the stale inbox item, so the
+	// recipient never sees the task at all.
+	if len(issuedParts) == 2 && assignedToDev != "" && (status == "in_progress" || status == "suspended") {
+		notifyInbox(r.Context(), s.rdb.Client, assignedToDev, assignedToSess, Message{
+			ID:          generateID(),
+			Type:        MsgTypeMsg,
+			FromDevice:  issuedParts[0],
+			FromSession: issuedParts[1],
+			Title:       "任务回报 " + req.TaskID,
+			Content:     "cancelled",
+			CreatedAt:   now,
+		})
+	}
+
 	s.rdb.Expire(r.Context(), taskKey, 30*24*time.Hour)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// handleTaskReopen resets a completed/cancelled task back to issued and
+// re-pushes it to the target inbox. The reason is injected into the inbox
+// item content so the recipient understands why the task reappeared.
+func (s *Server) handleTaskReopen(w http.ResponseWriter, r *http.Request) {
+	var req TaskReopenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.TaskID == "" {
+		writeError(w, http.StatusBadRequest, "missing field: task_id")
+		return
+	}
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "missing field: reason")
+		return
+	}
+	if len(req.Reason) > 1000 {
+		writeError(w, http.StatusBadRequest, "reason exceeds 1000 characters")
+		return
+	}
+
+	taskKey := "agentlink:task:" + req.TaskID
+	status, err := s.rdb.HGet(r.Context(), taskKey, "status").Result()
+	if err == redis.Nil {
+		writeError(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if status != "completed" && status != "cancelled" {
+		writeError(w, http.StatusBadRequest, "task is not completed or cancelled (use task resume for suspended)")
+		return
+	}
+
+	taskData, err := s.rdb.HGetAll(r.Context(), taskKey).Result()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if err := s.rdb.HSet(r.Context(), taskKey,
+		"status", "issued",
+		"result", "",
+		"completed_at", "",
+		"reopen_reason", req.Reason,
+	).Err(); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	assignedTo := taskData["assigned_to"]
+	parts := strings.SplitN(assignedTo, ":", 2)
+	issuedParts := strings.SplitN(taskData["issued_by"], ":", 2)
+
+	if len(parts) == 2 {
+		s.rdb.SAdd(r.Context(), "agentlink:tasks:"+parts[0]+":"+parts[1], req.TaskID)
+	}
+	if len(issuedParts) == 2 {
+		s.rdb.SAdd(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], req.TaskID)
+		s.rdb.Expire(r.Context(), "agentlink:issued:"+issuedParts[0]+":"+issuedParts[1], TaskTTL)
+	}
+
+	inboxContent := "[重发原因: " + req.Reason + "]\n" + taskData["content"]
+	id := generateID()
+	inboxItem := Message{
+		ID:         id,
+		Type:       MsgTypeTask,
+		TaskID:     req.TaskID,
+		Title:      taskData["title"],
+		Content:    inboxContent,
+		CreatedAt:  now,
+	}
+	if len(issuedParts) == 2 {
+		inboxItem.FromDevice = issuedParts[0]
+		inboxItem.FromSession = issuedParts[1]
+	}
+
+	msgJSON, _ := json.Marshal(inboxItem)
+	if len(parts) == 2 {
+		inboxKey := "agentlink:inbox:" + parts[0] + ":" + parts[1]
+		s.rdb.LPush(r.Context(), inboxKey, msgJSON)
+		s.rdb.Expire(r.Context(), inboxKey, TaskTTL)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -1189,30 +1346,17 @@ func (s *Server) handleTaskStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
-	device, _ := r.Context().Value(contextKeyDevice).(string)
-
-	session := r.URL.Query().Get("session")
-	if session == "" {
-		writeError(w, http.StatusBadRequest, "missing session parameter")
-		return
-	}
-	if !deviceNameRE.MatchString(session) {
-		writeError(w, http.StatusBadRequest, "invalid session name")
-		return
-	}
-
-	trackingKey := "agentlink:tasks:" + device + ":" + session
-	members, err := s.rdb.SMembers(r.Context(), trackingKey).Result()
+// readTasks reads task records from a Redis set key and returns them as a
+// slice of TaskStatusResponse. Errors and missing records are skipped.
+func (s *Server) readTasks(ctx context.Context, setKey string) []TaskStatusResponse {
+	members, err := s.rdb.SMembers(ctx, setKey).Result()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
+		return nil
 	}
-
-	tasks := make([]TaskStatusResponse, 0)
+	tasks := make([]TaskStatusResponse, 0, len(members))
 	for _, tid := range members {
 		taskKey := "agentlink:task:" + tid
-		data, err := s.rdb.HGetAll(r.Context(), taskKey).Result()
+		data, err := s.rdb.HGetAll(ctx, taskKey).Result()
 		if err != nil || len(data) == 0 {
 			continue
 		}
@@ -1227,8 +1371,59 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
 			CompletedAt: data["completed_at"],
 		})
 	}
+	return tasks
+}
 
-	writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		writeError(w, http.StatusBadRequest, "missing session parameter")
+		return
+	}
+	if !deviceNameRE.MatchString(session) {
+		writeError(w, http.StatusBadRequest, "invalid session name")
+		return
+	}
+
+	receivedKey := "agentlink:tasks:" + device + ":" + session
+	received := s.readTasks(r.Context(), receivedKey)
+
+	sentKey := "agentlink:issued:" + device + ":" + session
+	sent := s.readTasks(r.Context(), sentKey)
+
+	writeJSON(w, http.StatusOK, map[string]any{"received": received, "sent": sent})
+}
+
+func (s *Server) handleWhoami(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		writeError(w, http.StatusBadRequest, "missing session parameter")
+		return
+	}
+
+	status := s.buildRecipientStatus(r.Context(), device, session)
+
+	// Count received (tracking) and sent (issued) tasks
+	recvKey := "agentlink:tasks:" + device + ":" + session
+	sentKey := "agentlink:issued:" + device + ":" + session
+	recvTasks := s.readTasks(r.Context(), recvKey)
+	sentTasks := s.readTasks(r.Context(), sentKey)
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device":  device,
+		"session": session,
+		"current": status.Current,
+		"inbox": map[string]int{
+			"received": len(recvTasks),
+			"sent":     len(sentTasks),
+		},
+		"received_tasks": recvTasks,
+		"sent_tasks":     sentTasks,
+	})
 }
 
 func generateID() string {
@@ -1281,6 +1476,21 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// notifyInbox LPUSHes a msg into the target inbox with TaskTTL. Best-effort:
+// errors are silently dropped (notification is informational, not transactional).
+func notifyInbox(ctx context.Context, rdb *redis.Client, device, session string, msg Message) {
+	if device == "" || session == "" {
+		return
+	}
+	msgJSON, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	inboxKey := "agentlink:inbox:" + device + ":" + session
+	rdb.LPush(ctx, inboxKey, msgJSON)
+	rdb.Expire(ctx, inboxKey, TaskTTL)
 }
 
 // writeBusyError responds 409 with a recipient_status panel so the caller

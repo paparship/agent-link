@@ -38,29 +38,11 @@ func (l *ClaudeCodeLauncher) CheckPrereqs() error {
 }
 
 func (l *ClaudeCodeLauncher) InitTemplate(session string, device string) string {
-	bt := "`"
-	header := fmt.Sprintf("# %s session (device: %s)\n\n", session, device)
-	identity := fmt.Sprintf("## Your identity\n\n- Device: `%s`\n- Session: `%s`\n- To send messages: `agentlink send <device>:<session> \"<content>\"`\n\n", device, session)
-
-	switch session {
-	case "main":
-		return header + identity + "## Communication\n\n" +
-			"- " + bt + `agentlink task send <target> <task_id> "<content>"` + bt + " — 发放任务\n" +
-			"- " + bt + `agentlink task resume <task_id> "<guidance>"` + bt + " — 恢复挂起任务\n" +
-			"- " + bt + "agentlink task cancel <task_id>" + bt + " — 取消任务\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取消息（poller 开启时自动注入，无需手动 pull）\n" +
-			"- " + bt + "agentlink list --all" + bt + " — 查看所有设备状态\n"
-	case "worker":
-		return header + identity + "## Communication\n\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取任务或消息（poller 开启时自动注入）\n" +
-			"- " + bt + `agentlink task result <task_id> completed "<result>"` + bt + " — 回报完成\n" +
-			"- " + bt + `agentlink task result <task_id> suspended "<reason>"` + bt + " — 回报挂起\n" +
-			"- " + bt + `agentlink send <target> "<content>"` + bt + " — 发送消息\n"
-	default:
-		return header + identity + "## Communication\n\n" +
-			"- " + bt + "agentlink pull" + bt + " — 拉取任务或消息\n" +
-			"- " + bt + `agentlink send <target> "<content>"` + bt + " — 发送消息\n"
-	}
+	return fmt.Sprintf(
+		"You are agentlink device **%s**, session **%s** on the team network.\n"+
+			"When involving agent collaboration network, run `agentlink whoami` first.\n",
+		device, session,
+	)
 }
 
 // ClaudeCodeDetector implements IdleDetector for Claude Code.
