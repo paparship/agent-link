@@ -65,7 +65,7 @@ func (p *Poller) Run() error {
 			fmt.Fprintf(p.Stdout, "message from %s:%s\n", msg.FromDevice, msg.FromSession)
 			if msg.Interrupt {
 				fmt.Fprintf(p.Stdout, "interrupt: sending Ctrl+C\n")
-				exec.Command("tmux", "send-keys", "-t", p.Session, "C-c").Run()
+				exec.Command("tmux", "send-keys", "-t", p.Session, "Escape").Run()
 				time.Sleep(3 * time.Second)
 			} else {
 				p.waitForIdle()

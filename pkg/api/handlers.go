@@ -1012,7 +1012,18 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if status != "in_progress" {
-		writeError(w, http.StatusBadRequest, "task is not in_progress")
+		hint := ""
+		switch status {
+		case "suspended":
+			hint = " (resume it: task resume <id> \"<updated guidance>\")"
+		case "issued":
+			hint = " (task not pulled yet, wait for it)"
+		case "completed":
+			hint = " (task already completed; use reopen if needed)"
+		case "cancelled":
+			hint = " (task was cancelled; use reopen if needed)"
+		}
+		writeError(w, http.StatusBadRequest, "task is not in_progress"+hint)
 		return
 	}
 
