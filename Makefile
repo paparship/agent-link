@@ -6,11 +6,14 @@ BINDIR  ?= /usr/local/bin
 build:
 	$(GO) build -o agentlink ./cmd/agentlink/
 
+# CGO_ENABLED=0 produces static binaries with no glibc dependency, so the
+# release artifacts run on any Linux regardless of the build machine's glibc
+# version (otherwise they carry the CI runner's GLIBC_2.3x symbol requirements).
 build-all:
-	GOOS=linux GOARCH=amd64 $(GO) build -o bin/agentlink-linux-amd64 ./cmd/agentlink/
-	GOOS=linux GOARCH=arm64 $(GO) build -o bin/agentlink-linux-arm64 ./cmd/agentlink/
-	GOOS=darwin GOARCH=amd64 $(GO) build -o bin/agentlink-darwin-amd64 ./cmd/agentlink/
-	GOOS=darwin GOARCH=arm64 $(GO) build -o bin/agentlink-darwin-arm64 ./cmd/agentlink/
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/agentlink-linux-amd64 ./cmd/agentlink/
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -o bin/agentlink-linux-arm64 ./cmd/agentlink/
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build -o bin/agentlink-darwin-amd64 ./cmd/agentlink/
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build -o bin/agentlink-darwin-arm64 ./cmd/agentlink/
 
 build-server:
 	$(GO) build -o server ./cmd/server/

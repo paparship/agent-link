@@ -84,11 +84,6 @@ func cmdInit(args []string) {
 	force := fs.Bool("force", false, "Force re-register if device exists (default: false)")
 	fs.Parse(args)
 
-	if *server == "" || *password == "" {
-		fmt.Fprintln(os.Stderr, "init: --server and --password are required")
-		os.Exit(1)
-	}
-
 	path := fs.Arg(0)
 	if path == "" {
 		path = "./agent_team"
@@ -102,6 +97,29 @@ func cmdInit(args []string) {
 		Agent:    *agent,
 		NoPoll:   *noPoll,
 		Force:    *force,
+	}
+
+	// When a required field is missing, run the interactive wizard on a
+	// terminal; otherwise keep the original hard error (so piped stdin in
+	// CI/scripts fails fast instead of hanging).
+	if opts.Server == "" || opts.Password == "" {
+		if rt.IsInteractive() {
+			opts.Interactive = true
+			if err := rt.PromptInitOptions(opts); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "init: --server and --password are required")
+			os.Exit(1)
+		}
+	}
+
+	// In interactive mode, show a summary and let the user back out before
+	// anything is created or registered.
+	if opts.Interactive && !rt.ConfirmInitSummary(opts) {
+		fmt.Fprintln(os.Stderr, "已取消")
+		os.Exit(1)
 	}
 
 	if err := rt.RunInit(opts); err != nil {

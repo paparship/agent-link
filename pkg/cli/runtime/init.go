@@ -24,6 +24,9 @@ type InitOptions struct {
 	Agent    string
 	NoPoll   bool
 	Force    bool
+	// Interactive is set when init ran the terminal wizard. It lets RunInit
+	// re-prompt for the password on a 401 instead of failing outright.
+	Interactive bool
 }
 
 type registerRequest struct {
@@ -75,6 +78,13 @@ func RunInit(opts *InitOptions) error {
 		}
 	}
 
+	// Register first (network-only, no local side effects) so a failure —
+	// wrong password or unreachable server — leaves nothing behind on disk.
+	regResp, err := registerDeviceInteractive(opts, device)
+	if err != nil {
+		return fmt.Errorf("registration failed: %w", err)
+	}
+
 	// Create directories
 	agentlinkDir := filepath.Join(os.Getenv("HOME"), ".agentlink")
 	if err := os.MkdirAll(agentlinkDir, 0755); err != nil {
@@ -95,12 +105,6 @@ func RunInit(opts *InitOptions) error {
 	configPath := filepath.Join(agentlinkDir, "config.toml")
 	if err := api.WriteConfigTOML(configPath, opts.Server, device, absPath, opts.Agent, opts.NoPoll, nil); err != nil {
 		return fmt.Errorf("cannot write config: %w", err)
-	}
-
-	// Call register API
-	regResp, err := registerDevice(opts.Server, device, opts.Password)
-	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
 	}
 
 	// Write credentials.json
@@ -263,7 +267,28 @@ func readClaudeSessionID() (string, error) {
 	return doc.LastSessionID, nil
 }
 
-func registerDevice(server, device, password string) (*registerResponse, error) {
+// registerDeviceInteractive registers the device. When running interactively
+// and the server rejects the password (401), it re-prompts for the password
+// and retries, up to two additional attempts, instead of aborting.
+func registerDeviceInteractive(opts *InitOptions, device string) (*registerResponse, error) {
+	for attempt := 0; ; attempt++ {
+		regResp, status, err := registerDevice(opts.Server, device, opts.Password)
+		if err == nil {
+			return regResp, nil
+		}
+		if opts.Interactive && status == http.StatusUnauthorized && attempt < 2 {
+			fmt.Printf("  %v\n", err)
+			opts.Password = promptSecret("请重新输入注册密码")
+			continue
+		}
+		return nil, err
+	}
+}
+
+// registerDevice POSTs to /agents/register. It returns the HTTP status code
+// alongside the error (0 on transport failure) so callers can distinguish a
+// wrong password (401) from other failures.
+func registerDevice(server, device, password string) (*registerResponse, int, error) {
 	body := registerRequest{
 		Device:           device,
 		Sessions:         []string{"main", "worker"},
@@ -274,7 +299,7 @@ func registerDevice(server, device, password string) (*registerResponse, error) 
 	url := server + "/agents/register"
 	resp, err := http.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
-		return nil, fmt.Errorf("cannot connect to server %s: %w", server, err)
+		return nil, 0, fmt.Errorf("cannot connect to server %s: %w", server, err)
 	}
 	defer resp.Body.Close()
 
@@ -285,14 +310,14 @@ func registerDevice(server, device, password string) (*registerResponse, error) 
 			Error string `json:"error"`
 		}
 		if json.Unmarshal(respBody, &errResp) == nil && errResp.Error != "" {
-			return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
+			return nil, resp.StatusCode, fmt.Errorf("server returned %d: %s", resp.StatusCode, errResp.Error)
 		}
-		return nil, fmt.Errorf("server returned %d", resp.StatusCode)
+		return nil, resp.StatusCode, fmt.Errorf("server returned %d", resp.StatusCode)
 	}
 
 	var regResp registerResponse
 	if err := json.Unmarshal(respBody, &regResp); err != nil {
-		return nil, fmt.Errorf("invalid server response: %w", err)
+		return nil, resp.StatusCode, fmt.Errorf("invalid server response: %w", err)
 	}
-	return &regResp, nil
+	return &regResp, resp.StatusCode, nil
 }
