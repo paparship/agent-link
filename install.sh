@@ -73,5 +73,22 @@ else
   mv "$tmpfile" "$BINDIR/$BINARY"
 fi
 
+# --- ensure tmux ---
+TMUX_MISSING=0
+command -v tmux >/dev/null 2>&1 || TMUX_MISSING=1
+
 echo "✓ agentlink installed to $BINDIR/$BINARY"
+if [ "$TMUX_MISSING" -eq 1 ]; then
+  echo ""
+  echo "  ⚠ tmux is required. Install it:"
+  case "$OS" in
+    linux)
+      echo "    apt install -y tmux    (Debian/Ubuntu)"
+      echo "    yum install -y tmux    (RHEL/CentOS)"
+      ;;
+    darwin)
+      echo "    brew install tmux"
+      ;;
+  esac
+fi
 echo "  Run 'agentlink init --help' to get started"
