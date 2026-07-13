@@ -2,7 +2,9 @@ package adapter
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -43,6 +45,11 @@ func (l *ClaudeCodeLauncher) InitTemplate(session string, device string) string 
 			"When involving agent collaboration network, run `agentlink whoami` first.\n",
 		device, session,
 	)
+}
+
+// SessionIDPath returns ~/.claude.json, where Claude Code records lastSessionId.
+func (l *ClaudeCodeLauncher) SessionIDPath() string {
+	return filepath.Join(os.Getenv("HOME"), ".claude.json")
 }
 
 // ClaudeCodeDetector implements IdleDetector for Claude Code.

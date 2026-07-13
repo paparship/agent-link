@@ -25,6 +25,12 @@ type AgentLauncher interface {
 	// InitTemplate returns the CLAUDE.md content for a given session and device.
 	// agentlink writes this file into each session directory during init.
 	InitTemplate(session string, device string) string
+
+	// SessionIDPath returns the path to the JSON file where the agent records
+	// its last session id (agentlink reads "lastSessionId" from it). Different
+	// agents store it in different places, e.g. claude uses ~/.claude.json
+	// while tclaude uses ~/.tclaude/.claude.json.
+	SessionIDPath() string
 }
 
 // IdleDetector checks whether the agent's tmux pane is ready for input.
@@ -41,20 +47,24 @@ type IdleDetector interface {
 }
 
 // NewLauncher returns an AgentLauncher for the named agent.
-// Currently supported: "claude". Returns nil for unknown names.
+// Currently supported: "claude", "tclaude". Returns nil for unknown names.
 func NewLauncher(agent string) AgentLauncher {
 	switch agent {
 	case "claude":
 		return &ClaudeCodeLauncher{}
+	case "tclaude":
+		return &TclaudeLauncher{}
 	}
 	return nil
 }
 
 // NewDetector returns an IdleDetector for the named agent.
-// Currently supported: "claude". Returns nil for unknown names.
+// Currently supported: "claude", "tclaude". Returns nil for unknown names.
 func NewDetector(agent string) IdleDetector {
 	switch agent {
-	case "claude":
+	case "claude", "tclaude":
+		// tclaude forwards to upstream Claude Code, so the TUI (and thus the
+		// busy / prompt markers) is identical.
 		return &ClaudeCodeDetector{}
 	}
 	return nil

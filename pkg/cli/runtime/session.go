@@ -193,8 +193,8 @@ func killSessionSessions(baseDir string) {
 			continue
 		}
 		name := e.Name()
-		exec.Command("tmux", "kill-session", "-t", name).Run()
-		exec.Command("tmux", "kill-session", "-t", name+"-poller").Run()
+		exec.Command("tmux", "kill-session", "-t", "="+name).Run()
+		exec.Command("tmux", "kill-session", "-t", "="+name+"-poller").Run()
 	}
 }
 
@@ -215,11 +215,13 @@ func RunAttach(session string) error {
 		return fmt.Errorf("session directory %q not found; use 'agentlink session add %s' first", sessionDir, session)
 	}
 
-	// Check if tmux session exists
-	hasSession := exec.Command("tmux", "has-session", "-t", session).Run() == nil
+	// Check if tmux session exists. Use "=" for an exact match: without it,
+	// tmux falls back to prefix matching, so "-t main" would silently match
+	// "main-poller" when the real "main" session is gone (see issue 32).
+	hasSession := exec.Command("tmux", "has-session", "-t", "="+session).Run() == nil
 
 	if hasSession {
-		cmd := exec.Command("tmux", "attach", "-t", session)
+		cmd := exec.Command("tmux", "attach", "-t", "="+session)
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

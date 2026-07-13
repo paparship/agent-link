@@ -200,9 +200,11 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 	recorded := map[string]string{}
 
 	for _, session := range sessions {
-		// Kill any pre-existing tmux session for this name
-		exec.Command("tmux", "kill-session", "-t", session).Run()
-		exec.Command("tmux", "kill-session", "-t", session+"-poller").Run()
+		// Kill any pre-existing tmux session for this name. Use "=" for an
+		// exact match so a stale "main-poller" is not prefix-matched by
+		// "-t main" (see issue 32).
+		exec.Command("tmux", "kill-session", "-t", "="+session).Run()
+		exec.Command("tmux", "kill-session", "-t", "="+session+"-poller").Run()
 
 		dir := filepath.Join(baseDir, session)
 		name, args := launcher.Command()
@@ -210,15 +212,38 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 			sessionID := opts.Existing[session]
 			args = launcher.ResumeArgs(sessionID)
 		}
-		cmdArgs := append([]string{"new-session", "-d", "-s", session, "-c", dir, name}, args...)
+		// Launch the agent through a shell wrapper that captures stderr and the
+		// exit code to a per-session log. Without this, a claude that exits at
+		// startup (root refusing --dangerously-skip-permissions, --continue
+		// failing, etc.) takes its error message down with the tmux session and
+		// leaves no trace (see issue 32). stderr goes to the file; stdout stays
+		// on the pane tty so the TUI is unaffected.
+		logPath := sessionLogPath(session)
+		wrapped := fmt.Sprintf("%s 2>>%s; echo \"[exited code=$? at $(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)]\" >>%s",
+			shellJoin(append([]string{name}, args...)), shellQuote(logPath), shellQuote(logPath))
+		cmdArgs := []string{"new-session", "-d", "-s", session, "-c", dir, "sh", "-c", wrapped}
 		if err := exec.Command("tmux", cmdArgs...).Run(); err != nil {
 			return nil, fmt.Errorf("cannot create tmux session %q: %w", session, err)
+		}
+
+		// Liveness probe: if the session is already gone, claude exited at
+		// startup. Report the reason from the log instead of silently
+		// continuing (which would leave only the poller behind).
+		time.Sleep(1 * time.Second)
+		if !tmuxSessionAlive(session) {
+			fmt.Printf("  ✗ %s 启动失败,claude 已退出\n", session)
+			if tail := tailFile(logPath, 12); tail != "" {
+				fmt.Printf("%s\n", indent(tail, "    "))
+			}
+			fmt.Printf("    完整日志: %s\n", logPath)
+			recorded[session] = ""
+			continue
 		}
 
 		fmt.Printf("  %s — waiting for Claude to start", session)
 		id := opts.Existing[session]
 		if !opts.Resume || id == "" {
-			recorded[session] = readClaudeSessionIDWithTimeout(10 * time.Second)
+			recorded[session] = readClaudeSessionIDWithTimeout(launcher.SessionIDPath(), 10*time.Second)
 		} else {
 			recorded[session] = id
 		}
@@ -236,12 +261,63 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 	return recorded, nil
 }
 
-// readClaudeSessionIDWithTimeout polls ~/.claude.json for lastSessionId,
-// waiting up to timeout for a non-empty value. Returns "" on timeout.
-func readClaudeSessionIDWithTimeout(timeout time.Duration) string {
+// tmuxSessionAlive reports whether a tmux session with the exact given name
+// exists. The "=" prefix forces an exact match (no prefix fallback).
+func tmuxSessionAlive(session string) bool {
+	return exec.Command("tmux", "has-session", "-t", "="+session).Run() == nil
+}
+
+// sessionLogPath returns ~/.agentlink/logs/<session>.log, creating the logs
+// directory if needed.
+func sessionLogPath(session string) string {
+	logDir := filepath.Join(os.Getenv("HOME"), ".agentlink", "logs")
+	os.MkdirAll(logDir, 0755)
+	return filepath.Join(logDir, session+".log")
+}
+
+// tailFile returns the last n lines of a file, or "" if it cannot be read.
+func tailFile(path string, n int) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// indent prefixes every line of s with prefix.
+func indent(s, prefix string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		lines[i] = prefix + l
+	}
+	return strings.Join(lines, "\n")
+}
+
+// shellQuote single-quotes a string for safe use in a /bin/sh command.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// shellJoin quotes and space-joins args into a single /bin/sh command string.
+func shellJoin(args []string) string {
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = shellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// readClaudeSessionIDWithTimeout polls the agent's session-id file for
+// lastSessionId, waiting up to timeout for a non-empty value. Returns "" on
+// timeout. The path comes from the launcher (claude vs tclaude differ).
+func readClaudeSessionIDWithTimeout(path string, timeout time.Duration) string {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		id, _ := readClaudeSessionID()
+		id, _ := readClaudeSessionID(path)
 		if id != "" {
 			return id
 		}
@@ -250,10 +326,9 @@ func readClaudeSessionIDWithTimeout(timeout time.Duration) string {
 	return ""
 }
 
-// readClaudeSessionID reads ~/.claude.json and returns lastSessionId.
+// readClaudeSessionID reads the given JSON file and returns lastSessionId.
 // Returns "" if the file is absent or the field is empty.
-func readClaudeSessionID() (string, error) {
-	path := filepath.Join(os.Getenv("HOME"), ".claude.json")
+func readClaudeSessionID(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
