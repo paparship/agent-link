@@ -135,3 +135,11 @@ func TestClaudeCodeLauncher_ResumeArgs(t *testing.T) {
 		}
 	})
 }
+
+func TestClaudeCodeLauncher_NewSessionArgs(t *testing.T) {
+	l := &ClaudeCodeLauncher{}
+	args := l.NewSessionArgs("abc-123")
+	if len(args) != 3 || args[0] != "--session-id" || args[1] != "abc-123" || args[2] != "--dangerously-skip-permissions" {
+		t.Errorf("unexpected args: %v", args)
+	}
+}

@@ -34,24 +34,23 @@ func RunResume() error {
 		return fmt.Errorf("device check failed (was it uninstalled?): %w", err)
 	}
 
-	// Determine which sessions to resume. With [sessions], use those keys;
-	// without (legacy config), scan BaseDir for session directories (23c).
-	sessionNames, fallback := resumeSessionList(cfg)
+	// Determine which sessions to resume. Prefer [sessions] keys; if the
+	// segment is absent (legacy config), scan BaseDir for session directories.
+	sessionNames, scanned := resumeSessionList(cfg)
 	if len(sessionNames) == 0 {
 		return fmt.Errorf("no sessions found under %s; run `agentlink init` first", cfg.BaseDir)
 	}
 
-	if fallback {
-		fmt.Println("⚠ config.toml has no [sessions] segment — using --continue fallback")
-		fmt.Println("  Run `agentlink init` again to enable precise session resume")
+	if scanned {
+		fmt.Println("⚠ config.toml has no [sessions] segment — session names taken from directory scan")
 	}
 
-	// Launch tmux sessions with Resume=true. launchSessions reads
-	// opts.Existing to decide --resume <id> vs --continue per session.
+	// Relaunch tmux sessions with Resume=true → each session's Claude Code is
+	// resumed via --continue (most recent conversation in that dir), which is
+	// unambiguous per-session and survives an in-session /clear (see issue 34).
 	if _, err := launchSessions(cfg.BaseDir, cfg.Agent, launchOpts{
-		Resume:   true,
-		NoPoll:   !cfg.Poll.Enabled,
-		Existing: cfg.Sessions,
+		Resume: true,
+		NoPoll: !cfg.Poll.Enabled,
 	}); err != nil {
 		return err
 	}

@@ -2,16 +2,17 @@ package adapter
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
+	"strings"
 )
 
-// TclaudeLauncher launches Tencent's internal Claude Code wrapper (tclaude).
-// tclaude forwards all agent args to upstream Claude Code as-is and points it
-// at ~/.tclaude via CLAUDE_CONFIG_DIR, so it differs from claude only in the
-// binary name, the prereq check, and where lastSessionId is recorded. It
-// embeds ClaudeCodeLauncher to reuse ResumeArgs and InitTemplate.
+// TclaudeLauncher implements AgentLauncher for tclaude, Tencent's internal
+// Claude Code wrapper. tclaude forwards all non-self arguments to the upstream
+// Claude Code binary and sets CLAUDE_CONFIG_DIR=~/.tclaude, so its launch and
+// resume behaviour is identical to claude apart from the binary name.
+//
+// It embeds ClaudeCodeLauncher to inherit ResumeArgs and InitTemplate; only
+// the binary name and prerequisite check differ.
 type TclaudeLauncher struct {
 	ClaudeCodeLauncher
 }
@@ -21,17 +22,14 @@ func (l *TclaudeLauncher) Command() (name string, args []string) {
 }
 
 func (l *TclaudeLauncher) CheckPrereqs() error {
+	var missing []string
 	for _, cmd := range []string{"tmux", "tclaude"} {
 		if _, err := exec.LookPath(cmd); err != nil {
-			return fmt.Errorf("require %s to be installed", cmd)
+			missing = append(missing, cmd)
 		}
 	}
+	if len(missing) > 0 {
+		return fmt.Errorf("require %s to be installed", strings.Join(missing, " and "))
+	}
 	return nil
-}
-
-// SessionIDPath returns ~/.tclaude/.claude.json. tclaude sets
-// CLAUDE_CONFIG_DIR=~/.tclaude, so the underlying Claude Code records
-// lastSessionId there rather than in ~/.claude.json.
-func (l *TclaudeLauncher) SessionIDPath() string {
-	return filepath.Join(os.Getenv("HOME"), ".tclaude", ".claude.json")
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -250,6 +251,20 @@ func TestRunInitE2E(t *testing.T) {
 	if !strings.Contains(string(workerData), `device = "test-device"`) {
 		t.Errorf("worker/.agentlink.toml missing device=test-device, got:\n%s", workerData)
 	}
+
+	// === Verify [sessions] recorded non-empty v4 UUIDs (issue 34) ===
+	// agentlink generates the ids itself via --session-id, so they must be
+	// present immediately — no reliance on reading them back from claude.
+	sessions := api.ReadTOMLSection(configContent, "sessions")
+	uuidRe := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	for _, name := range []string{"main", "worker"} {
+		id, ok := sessions[name]
+		if !ok || id == "" {
+			t.Errorf("config [sessions] missing non-empty id for %q; sessions=%v", name, sessions)
+		} else if !uuidRe.MatchString(id) {
+			t.Errorf("config [sessions] %q id is not a v4 UUID: %q", name, id)
+		}
+	}
 }
 
 func TestRunInitE2E_existingDir(t *testing.T) {
@@ -414,4 +429,23 @@ enabled = false
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestNewSessionID(t *testing.T) {
+	// UUID v4 canonical form: 8-4-4-4-12 hex, version nibble 4, variant 8/9/a/b.
+	re := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	seen := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		id, err := newSessionID()
+		if err != nil {
+			t.Fatalf("newSessionID() error: %v", err)
+		}
+		if !re.MatchString(id) {
+			t.Fatalf("newSessionID() = %q, not a valid v4 UUID", id)
+		}
+		if seen[id] {
+			t.Fatalf("newSessionID() produced a duplicate: %q", id)
+		}
+		seen[id] = true
+	}
 }

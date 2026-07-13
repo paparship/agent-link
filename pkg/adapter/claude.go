@@ -2,9 +2,7 @@ package adapter
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -23,6 +21,14 @@ func (l *ClaudeCodeLauncher) ResumeArgs(sessionID string) []string {
 		return []string{"--continue", "--dangerously-skip-permissions"}
 	}
 	return []string{"--resume", sessionID, "--dangerously-skip-permissions"}
+}
+
+// NewSessionArgs starts a fresh Claude Code session bound to a specific,
+// caller-provided session id (must be a valid UUID). Claude records the
+// conversation under this id, so agentlink can persist it immediately without
+// reading it back from ~/.claude.json (see issue 34).
+func (l *ClaudeCodeLauncher) NewSessionArgs(sessionID string) []string {
+	return []string{"--session-id", sessionID, "--dangerously-skip-permissions"}
 }
 
 func (l *ClaudeCodeLauncher) CheckPrereqs() error {
@@ -45,11 +51,6 @@ func (l *ClaudeCodeLauncher) InitTemplate(session string, device string) string 
 			"When involving agent collaboration network, run `agentlink whoami` first.\n",
 		device, session,
 	)
-}
-
-// SessionIDPath returns ~/.claude.json, where Claude Code records lastSessionId.
-func (l *ClaudeCodeLauncher) SessionIDPath() string {
-	return filepath.Join(os.Getenv("HOME"), ".claude.json")
 }
 
 // ClaudeCodeDetector implements IdleDetector for Claude Code.

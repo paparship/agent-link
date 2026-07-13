@@ -18,6 +18,12 @@ type AgentLauncher interface {
 	// fallback (used for configs created before session_id recording).
 	ResumeArgs(sessionID string) []string
 
+	// NewSessionArgs returns the arguments to start a brand-new session bound
+	// to a caller-chosen session id (a valid UUID). agentlink generates the id
+	// itself and passes it in, so it knows the id up front without reading it
+	// back from the agent's state files (see issue 34).
+	NewSessionArgs(sessionID string) []string
+
 	// CheckPrereqs verifies the host environment has everything the agent needs
 	// (e.g. the agent binary in PATH), returning an error if not.
 	CheckPrereqs() error
@@ -25,12 +31,6 @@ type AgentLauncher interface {
 	// InitTemplate returns the CLAUDE.md content for a given session and device.
 	// agentlink writes this file into each session directory during init.
 	InitTemplate(session string, device string) string
-
-	// SessionIDPath returns the path to the JSON file where the agent records
-	// its last session id (agentlink reads "lastSessionId" from it). Different
-	// agents store it in different places, e.g. claude uses ~/.claude.json
-	// while tclaude uses ~/.tclaude/.claude.json.
-	SessionIDPath() string
 }
 
 // IdleDetector checks whether the agent's tmux pane is ready for input.

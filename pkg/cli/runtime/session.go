@@ -67,21 +67,21 @@ func RunSessionAdd(name string) error {
 
 	// Launch tmux session and record Claude session_id
 	sessions, err := launchSessions(cfg.BaseDir, cfg.Agent, launchOpts{
-		Resume:   false,
-		NoPoll:   !cfg.Poll.Enabled,
-		Existing: nil,
-		Only:     name,
+		Resume: false,
+		NoPoll: !cfg.Poll.Enabled,
+		Only:   name,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot launch session: %w", err)
 	}
 
-	// Update config.toml [sessions] with the new session_id
+	// Record the session in config unconditionally. The name must be tracked
+	// even when the id is empty (e.g. claude failed to start), otherwise
+	// restart would not know this session exists (issue 30). UpdateSessionID
+	// appends the [sessions] entry if the segment is absent.
 	configPath := filepath.Join(os.Getenv("HOME"), ".agentlink", "config.toml")
-	if sid, ok := sessions[name]; ok && sid != "" {
-		if err := api.UpdateSessionID(configPath, name, sid); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not record session_id: %v\n", err)
-		}
+	if err := api.UpdateSessionID(configPath, name, sessions[name]); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not record session in config: %v\n", err)
 	}
 
 	fmt.Printf("✓ Session %q added\n", name)

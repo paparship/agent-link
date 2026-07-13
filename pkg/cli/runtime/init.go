@@ -2,6 +2,7 @@ package rt
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -133,9 +134,8 @@ func RunInit(opts *InitOptions) error {
 
 	// Launch tmux sessions and record Claude session_ids
 	sessions, err := launchSessions(absPath, opts.Agent, launchOpts{
-		Resume:   false,
-		NoPoll:   opts.NoPoll,
-		Existing: nil,
+		Resume: false,
+		NoPoll: opts.NoPoll,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot launch sessions: %w", err)
@@ -164,26 +164,27 @@ func RunInit(opts *InitOptions) error {
 
 // launchOpts controls how launchSessions starts each tmux session.
 type launchOpts struct {
-	// Resume=true starts the agent with --resume <session_id>; false starts fresh.
+	// Resume=true resumes the session's existing conversation via --continue;
+	// false starts a brand-new conversation with a freshly generated session id.
 	Resume bool
 	// NoPoll suppresses the per-session poller tmux session.
 	NoPoll bool
-	// Existing maps session name → recorded session_id (from 23a).
-	// On Resume, sessions with a non-empty id use --resume; others fall back
-	// to --continue (23c). Ignored when Resume=false.
-	Existing map[string]string
 	// Only, when non-empty, launches just that single session (used by
 	// `session add`). When empty, launches "main" and "worker".
 	Only string
 }
 
 // launchSessions starts tmux session(s) + optional poller under baseDir.
-// Returns a map of session name → Claude session_id (recorded from
-// ~/.claude.json after each launch).
+// Returns a map of session name → Claude session_id.
 //
-// Sessions are launched serially so that each Claude Code process writes a
-// distinct lastSessionId before the next one starts; otherwise both would
-// race on the same ~/.claude.json field.
+// For a fresh launch (Resume=false) agentlink generates a UUID per session and
+// passes it via --session-id, so the id is known up front — no reading back
+// from ~/.claude.json (which Claude only writes on exit anyway; see issue 34).
+// For Resume=true it uses --continue: each session owns its own working
+// directory, so "most recent conversation in this dir" is unambiguous and
+// survives an in-session /clear (which would orphan a stored --resume id).
+//
+// Sessions are launched serially, mainly so their startup output stays legible.
 func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, error) {
 	selfExe, _ := os.Executable()
 	launcher := adapter.NewLauncher(agent)
@@ -207,11 +208,22 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 		exec.Command("tmux", "kill-session", "-t", "="+session+"-poller").Run()
 
 		dir := filepath.Join(baseDir, session)
-		name, args := launcher.Command()
+		name, _ := launcher.Command()
+
+		// Decide launch args + the session id we will record.
+		var args []string
+		var sid string
 		if opts.Resume {
-			sessionID := opts.Existing[session]
-			args = launcher.ResumeArgs(sessionID)
+			args = launcher.ResumeArgs("") // --continue
+		} else {
+			var err error
+			sid, err = newSessionID()
+			if err != nil {
+				return nil, fmt.Errorf("cannot generate session id: %w", err)
+			}
+			args = launcher.NewSessionArgs(sid)
 		}
+
 		// Launch the agent through a shell wrapper that captures stderr and the
 		// exit code to a per-session log. Without this, a claude that exits at
 		// startup (root refusing --dangerously-skip-permissions, --continue
@@ -240,17 +252,14 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 			continue
 		}
 
-		fmt.Printf("  %s — waiting for Claude to start", session)
-		id := opts.Existing[session]
-		if !opts.Resume || id == "" {
-			recorded[session] = readClaudeSessionIDWithTimeout(launcher.SessionIDPath(), 10*time.Second)
+		// Session is alive. For a fresh launch we already know the id (we chose
+		// it); for resume we let --continue pick the conversation and leave the
+		// recorded id empty (config's stored id is display-only after /clear).
+		recorded[session] = sid
+		if opts.Resume {
+			fmt.Printf("  %s ✓ (--continue)\n", session)
 		} else {
-			recorded[session] = id
-		}
-		if recorded[session] != "" {
-			fmt.Println(" ✓")
-		} else {
-			fmt.Println(" (session_id unavailable, continue fallback)")
+			fmt.Printf("  %s ✓ (session %s)\n", session, sid)
 		}
 
 		if !opts.NoPoll {
@@ -311,35 +320,17 @@ func shellJoin(args []string) string {
 	return strings.Join(quoted, " ")
 }
 
-// readClaudeSessionIDWithTimeout polls the agent's session-id file for
-// lastSessionId, waiting up to timeout for a non-empty value. Returns "" on
-// timeout. The path comes from the launcher (claude vs tclaude differ).
-func readClaudeSessionIDWithTimeout(path string, timeout time.Duration) string {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		id, _ := readClaudeSessionID(path)
-		if id != "" {
-			return id
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	return ""
-}
-
-// readClaudeSessionID reads the given JSON file and returns lastSessionId.
-// Returns "" if the file is absent or the field is empty.
-func readClaudeSessionID(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+// newSessionID returns a random RFC 4122 version-4 UUID string, suitable for
+// Claude Code's --session-id (which requires a valid UUID). Generated with
+// crypto/rand to avoid pulling in a uuid dependency.
+func newSessionID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
 		return "", err
 	}
-	var doc struct {
-		LastSessionID string `json:"lastSessionId"`
-	}
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return "", err
-	}
-	return doc.LastSessionID, nil
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10xx
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 // registerDeviceInteractive registers the device. When running interactively
