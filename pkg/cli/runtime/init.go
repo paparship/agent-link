@@ -22,9 +22,14 @@ type InitOptions struct {
 	Password string
 	Device   string
 	Path     string
-	Agent    string
-	NoPoll   bool
-	Force    bool
+	// Agent is the device-level default agent type (fallback for sessions
+	// without a per-session type). Derived from SessionAgents["main"].
+	Agent string
+	// SessionAgents maps session name → agent type (issue 35). Populated by
+	// RunInit (interactive prompt or auto-detect) when empty.
+	SessionAgents map[string]string
+	NoPoll        bool
+	Force         bool
 	// Interactive is set when init ran the terminal wizard. It lets RunInit
 	// re-prompt for the password on a 401 instead of failing outright.
 	Interactive bool
@@ -44,10 +49,6 @@ type registerResponse struct {
 }
 
 func RunInit(opts *InitOptions) error {
-	if opts.Agent == "" {
-		opts.Agent = "claude"
-	}
-
 	// Resolve device name
 	device := opts.Device
 	if device == "" {
@@ -58,13 +59,35 @@ func RunInit(opts *InitOptions) error {
 		device = hostname
 	}
 
-	// Pre-check prerequisites
-	launcher := adapter.NewLauncher(opts.Agent)
-	if launcher == nil {
-		return fmt.Errorf("unknown agent type %q", opts.Agent)
+	// Resolve each session's agent type (per-session, immutable — issue 35).
+	// Interactive init asks for main and worker separately; non-interactive
+	// picks the sole installed agent (else the first supported).
+	initSessions := []string{"main", "worker"}
+	if opts.SessionAgents == nil {
+		opts.SessionAgents = map[string]string{}
 	}
-	if err := launcher.CheckPrereqs(); err != nil {
-		return err
+	for _, session := range initSessions {
+		if opts.SessionAgents[session] != "" {
+			continue
+		}
+		a, err := resolveAgentFor(session, opts.Interactive)
+		if err != nil {
+			return err
+		}
+		opts.SessionAgents[session] = a
+	}
+	// Device-level default (fallback for legacy sessions without a type).
+	opts.Agent = opts.SessionAgents["main"]
+
+	// Pre-check prerequisites for every distinct agent we are about to launch.
+	for _, a := range opts.SessionAgents {
+		launcher := adapter.NewLauncher(a)
+		if launcher == nil {
+			return fmt.Errorf("unknown agent type %q", a)
+		}
+		if err := launcher.CheckPrereqs(); err != nil {
+			return err
+		}
 	}
 
 	// Resolve and validate target directory
@@ -119,15 +142,20 @@ func RunInit(opts *InitOptions) error {
 		return fmt.Errorf("cannot write credentials: %w", err)
 	}
 
-	// Write .agentlink.toml and CLAUDE.md for each session
+	// Write .agentlink.toml and CLAUDE.md for each session, each with its own
+	// (immutable) agent type.
 	for _, session := range regResp.Sessions {
+		agent := opts.SessionAgents[session]
+		if agent == "" {
+			agent = opts.Agent
+		}
 		sessionDir := filepath.Join(absPath, session)
 		tomlPath := filepath.Join(sessionDir, ".agentlink.toml")
-		if err := api.WriteSessionTOML(tomlPath, session, device); err != nil {
+		if err := api.WriteSessionTOML(tomlPath, session, device, agent); err != nil {
 			return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 		}
 		claudePath := filepath.Join(sessionDir, "CLAUDE.md")
-		if err := os.WriteFile(claudePath, []byte(launcher.InitTemplate(session, device)), 0600); err != nil {
+		if err := os.WriteFile(claudePath, []byte(adapter.NewLauncher(agent).InitTemplate(session, device)), 0600); err != nil {
 			return fmt.Errorf("cannot write %s: %w", claudePath, err)
 		}
 	}
@@ -184,13 +212,13 @@ type launchOpts struct {
 // directory, so "most recent conversation in this dir" is unambiguous and
 // survives an in-session /clear (which would orphan a stored --resume id).
 //
+// Each session's agent type is read from its own .agentlink.toml (written
+// before launch); defaultAgent is the device-level fallback for sessions
+// without a recorded type (see issue 35).
+//
 // Sessions are launched serially, mainly so their startup output stays legible.
-func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, error) {
+func launchSessions(baseDir, defaultAgent string, opts launchOpts) (map[string]string, error) {
 	selfExe, _ := os.Executable()
-	launcher := adapter.NewLauncher(agent)
-	if launcher == nil {
-		return nil, fmt.Errorf("unknown agent type %q", agent)
-	}
 
 	var sessions []string
 	if opts.Only != "" {
@@ -208,6 +236,17 @@ func launchSessions(baseDir, agent string, opts launchOpts) (map[string]string, 
 		exec.Command("tmux", "kill-session", "-t", "="+session+"-poller").Run()
 
 		dir := filepath.Join(baseDir, session)
+
+		// Resolve this session's agent (per-session, immutable). Fall back to
+		// the device default for legacy sessions without a recorded type.
+		agent := api.ReadSessionAgent(dir)
+		if agent == "" {
+			agent = defaultAgent
+		}
+		launcher := adapter.NewLauncher(agent)
+		if launcher == nil {
+			return nil, fmt.Errorf("unknown agent type %q for session %q", agent, session)
+		}
 		name, _ := launcher.Command()
 
 		// Decide launch args + the session id we will record.
@@ -318,6 +357,24 @@ func shellJoin(args []string) string {
 		quoted[i] = shellQuote(a)
 	}
 	return strings.Join(quoted, " ")
+}
+
+// resolveAgentFor decides a session's agent type. Interactive callers prompt
+// (annotated with local availability); non-interactive callers pick the sole
+// installed agent, else the first supported. Errors when none are installed.
+func resolveAgentFor(session string, interactive bool) (string, error) {
+	supported := adapter.SupportedAgents()
+	avail := adapter.AvailableAgents()
+	if len(avail) == 0 {
+		return "", fmt.Errorf("no supported agent found on this machine (need one of: %s in PATH)", strings.Join(supported, ", "))
+	}
+	if interactive {
+		return promptAgentChoice(session, supported, avail), nil
+	}
+	if len(avail) == 1 {
+		return avail[0], nil
+	}
+	return supported[0], nil
 }
 
 // newSessionID returns a random RFC 4122 version-4 UUID string, suitable for

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -67,7 +68,8 @@ Usage:
   agentlink task reopen <task_id> <reason>
   agentlink task status <task_id>
   agentlink task list
-  agentlink session add|remove <name>
+  agentlink session add --type <type> <name>
+  agentlink session remove <name>
   agentlink attach <session>
   agentlink restart
   agentlink uninstall
@@ -79,7 +81,6 @@ func cmdInit(args []string) {
 	server := fs.String("server", "", "API server URL")
 	password := fs.String("password", "", "Registration password")
 	device := fs.String("device", "", "Device name (default: hostname)")
-	agent := fs.String("agent", "claude", "Agent type (default: claude)")
 	noPoll := fs.Bool("no-poll", false, "Disable auto-polling (default: false)")
 	force := fs.Bool("force", false, "Force re-register if device exists (default: false)")
 	fs.Parse(args)
@@ -94,7 +95,6 @@ func cmdInit(args []string) {
 		Password: *password,
 		Device:   *device,
 		Path:     path,
-		Agent:    *agent,
 		NoPoll:   *noPoll,
 		Force:    *force,
 	}
@@ -324,12 +324,22 @@ func cmdSession(args []string) {
 }
 
 func cmdSessionAdd(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: agentlink session add <name>")
+	fs := flag.NewFlagSet("session add", flag.ExitOnError)
+	agentType := fs.String("type", "", "Agent type for this session (permanent). Omit to be shown the choices.")
+	fs.Parse(args)
+
+	if fs.NArg() < 1 {
+		fmt.Fprintln(os.Stderr, "usage: agentlink session add --type <type> <name>")
 		os.Exit(1)
 	}
-	name := args[0]
-	if err := rt.RunSessionAdd(name); err != nil {
+	name := fs.Arg(0)
+	err := rt.RunSessionAdd(name, *agentType)
+	if errors.Is(err, rt.ErrNeedsAgentType) {
+		// Guidance already printed by RunSessionAdd; exit non-zero without
+		// re-printing it as an error.
+		os.Exit(1)
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

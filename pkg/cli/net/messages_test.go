@@ -31,7 +31,7 @@ func setupAgentEnv(t *testing.T, serverURL string) string {
 	// worker/.agentlink.toml
 	sessionDir := filepath.Join(homeDir, "worker")
 	os.MkdirAll(sessionDir, 0755)
-	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
+	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device", "claude")
 
 	return sessionDir
 }
@@ -342,7 +342,7 @@ func TestFindCurrentSession(t *testing.T) {
 	os.MkdirAll(sub, 0755)
 
 	// Place .agentlink.toml at dir/a/b/
-	WriteSessionTOML(filepath.Join(dir, "a", "b", ".agentlink.toml"), "my-session", "dev")
+	WriteSessionTOML(filepath.Join(dir, "a", "b", ".agentlink.toml"), "my-session", "dev", "claude")
 
 	origWd, _ := os.Getwd()
 	defer os.Chdir(origWd)

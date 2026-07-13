@@ -2,16 +2,23 @@ package rt
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/team/agentlink/pkg/adapter"
 	api "github.com/team/agentlink/pkg/cli/net"
 )
 
-func RunSessionAdd(name string) error {
+// ErrNeedsAgentType is returned by RunSessionAdd when no agent type was given.
+// The caller should exit non-zero without printing it again — RunSessionAdd
+// has already emitted the NEEDS_AGENT_TYPE guidance the agent must act on.
+var ErrNeedsAgentType = errors.New("agent type required")
+
+func RunSessionAdd(name, agentType string) error {
 	cfg, creds, err := api.LoadAuth()
 	if err != nil {
 		return err
@@ -19,6 +26,21 @@ func RunSessionAdd(name string) error {
 
 	if err := checkTmux(); err != nil {
 		return err
+	}
+
+	// Agent type is chosen at creation and is permanent (issue 35). Without an
+	// explicit --type we do not guess: emit guidance telling the agent to
+	// confirm with the user and re-run, and create nothing.
+	if agentType == "" {
+		printNeedsAgentType(name)
+		return ErrNeedsAgentType
+	}
+	launcher := adapter.NewLauncher(agentType)
+	if launcher == nil {
+		return fmt.Errorf("unknown agent type %q; supported: %s", agentType, strings.Join(adapter.SupportedAgents(), ", "))
+	}
+	if err := launcher.CheckPrereqs(); err != nil {
+		return fmt.Errorf("agent type %q not usable: %w", agentType, err)
 	}
 
 	sessionDir := filepath.Join(cfg.BaseDir, name)
@@ -51,22 +73,21 @@ func RunSessionAdd(name string) error {
 		return fmt.Errorf("cannot create %s: %w", sessionDir, err)
 	}
 
-	// Write .agentlink.toml
+	// Write .agentlink.toml (records the permanent agent type)
 	tomlPath := filepath.Join(sessionDir, ".agentlink.toml")
-	if err := api.WriteSessionTOML(tomlPath, name, cfg.Device); err != nil {
+	if err := api.WriteSessionTOML(tomlPath, name, cfg.Device, agentType); err != nil {
 		return fmt.Errorf("cannot write %s: %w", tomlPath, err)
 	}
 
 	// Write CLAUDE.md
 	claudePath := filepath.Join(sessionDir, "CLAUDE.md")
-	launcher := adapter.NewLauncher(cfg.Agent)
 	claudeContent := launcher.InitTemplate(name, cfg.Device)
 	if err := os.WriteFile(claudePath, []byte(claudeContent), 0600); err != nil {
 		return fmt.Errorf("cannot write %s: %w", claudePath, err)
 	}
 
 	// Launch tmux session and record Claude session_id
-	sessions, err := launchSessions(cfg.BaseDir, cfg.Agent, launchOpts{
+	sessions, err := launchSessions(cfg.BaseDir, agentType, launchOpts{
 		Resume: false,
 		NoPoll: !cfg.Poll.Enabled,
 		Only:   name,
@@ -84,11 +105,9 @@ func RunSessionAdd(name string) error {
 		fmt.Fprintf(os.Stderr, "warning: could not record session in config: %v\n", err)
 	}
 
-	fmt.Printf("✓ Session %q added\n", name)
+	fmt.Printf("✓ session %q created — agent: %s (permanent)\n", name, agentType)
+	fmt.Println("  Report this agent type to the user to confirm.")
 	fmt.Printf("  Directory: %s\n", sessionDir)
-	fmt.Println()
-	fmt.Printf("Next step:\n")
-	fmt.Printf("  agentlink attach %s    # enter the session\n", name)
 
 	return nil
 }
@@ -228,7 +247,15 @@ func RunAttach(session string) error {
 		return cmd.Run()
 	}
 
-	launcher := adapter.NewLauncher(cfg.Agent)
+	// Use this session's own agent type (falling back to the device default).
+	agent := api.ReadSessionAgent(sessionDir)
+	if agent == "" {
+		agent = cfg.Agent
+	}
+	launcher := adapter.NewLauncher(agent)
+	if launcher == nil {
+		return fmt.Errorf("unknown agent type %q for session %q", agent, session)
+	}
 	name, args := launcher.Command()
 	cmdArgs := append([]string{"new-session", "-c", sessionDir, name}, args...)
 	cmd := exec.Command("tmux", cmdArgs...)
@@ -236,6 +263,31 @@ func RunAttach(session string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// printNeedsAgentType emits the guidance an agent sees when it runs
+// `session add` without --type: the supported catalog (annotated with local
+// availability, all from the registry) and what to do next. English, since
+// every non-basic command is run by the agent (issue 35).
+func printNeedsAgentType(name string) {
+	supported := adapter.SupportedAgents()
+	avail := map[string]bool{}
+	for _, a := range adapter.AvailableAgents() {
+		avail[a] = true
+	}
+	fmt.Printf("NEEDS_AGENT_TYPE: session %q needs an agent type (permanent, cannot be changed later).\n", name)
+	fmt.Println("Supported on this machine:")
+	for _, a := range supported {
+		mark := "not found"
+		if avail[a] {
+			mark = "installed"
+		}
+		fmt.Printf("  - %-8s (%s)\n", a, mark)
+	}
+	fmt.Println("Next:")
+	fmt.Printf("  - if the user already chose a CLI, re-run: agentlink session add --type <%s> %s\n",
+		strings.Join(supported, "|"), name)
+	fmt.Println("  - otherwise ask the user which one, then re-run with --type")
 }
 
 // -- helpers --

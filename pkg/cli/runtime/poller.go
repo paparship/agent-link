@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -270,13 +271,24 @@ func RunPoll() error {
 		interval = api.DefaultPollInterval
 	}
 
+	// Detector depends on this session's own agent type (issue 35), falling
+	// back to the device default for legacy sessions without a recorded type.
+	agent := api.ReadSessionAgent(filepath.Join(cfg.BaseDir, session))
+	if agent == "" {
+		agent = cfg.Agent
+	}
+	detector := adapter.NewDetector(agent)
+	if detector == nil {
+		return fmt.Errorf("unknown agent type %q for session %q", agent, session)
+	}
+
 	p := &Poller{
 		Session:      session,
 		Server:       cfg.Server,
 		APIKey:       creds.APIKey,
 		Interval:     time.Duration(interval) * time.Second,
 		Stdout:       os.Stdout,
-		IdleDetector: adapter.NewDetector(cfg.Agent),
+		IdleDetector: detector,
 	}
 	return p.Run()
 }

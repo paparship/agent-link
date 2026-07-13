@@ -2,6 +2,7 @@ package rt
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -50,7 +51,7 @@ func TestRunSessionAdd(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		if err := RunSessionAdd("reviewer"); err != nil {
+		if err := RunSessionAdd("reviewer", "claude"); err != nil {
 			t.Fatal(err)
 		}
 
@@ -84,7 +85,7 @@ func TestRunSessionAdd(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		err := RunSessionAdd("main")
+		err := RunSessionAdd("main", "claude")
 		if err == nil {
 			t.Fatal("expected error for duplicate session")
 		}
@@ -97,12 +98,48 @@ func TestRunSessionAdd(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunSessionAdd("reviewer")
+		err := RunSessionAdd("reviewer", "claude")
 		if err == nil {
 			t.Fatal("expected error")
 		}
 		if !strings.Contains(err.Error(), "config file not found") {
 			t.Errorf("expected config error, got: %s", err)
+		}
+	})
+
+	t.Run("missing agent type returns guidance sentinel", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		api.WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false, nil)
+		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
+		credData, _ := json.MarshalIndent(creds, "", "  ")
+		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
+
+		err := RunSessionAdd("coder", "")
+		if !errors.Is(err, ErrNeedsAgentType) {
+			t.Fatalf("expected ErrNeedsAgentType, got %v", err)
+		}
+		// nothing should have been created
+		if _, err := os.Stat(filepath.Join(homeDir, "coder")); err == nil {
+			t.Error("session directory should not exist when type is missing")
+		}
+	})
+
+	t.Run("unknown agent type is rejected", func(t *testing.T) {
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		api.WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false, nil)
+		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
+		credData, _ := json.MarshalIndent(creds, "", "  ")
+		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
+
+		err := RunSessionAdd("coder", "bogus")
+		if err == nil || !strings.Contains(err.Error(), "unknown agent type") {
+			t.Fatalf("expected unknown agent type error, got %v", err)
 		}
 	})
 }

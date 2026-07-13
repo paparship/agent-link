@@ -90,7 +90,7 @@ func TestWriteSessionTOML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".agentlink.toml")
 
-	err := api.WriteSessionTOML(path, "worker", "my-device")
+	err := api.WriteSessionTOML(path, "worker", "my-device", "claude")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,13 +107,16 @@ func TestWriteSessionTOML(t *testing.T) {
 	if !strings.Contains(content, `device = "my-device"`) {
 		t.Errorf("missing device, got: %s", content)
 	}
+	if !strings.Contains(content, `agent = "claude"`) {
+		t.Errorf("missing agent, got: %s", content)
+	}
 }
 
 func TestWriteSessionTOMLFileMode(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".agentlink.toml")
 
-	api.WriteSessionTOML(path, "main", "dev")
+	api.WriteSessionTOML(path, "main", "dev", "claude")
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -263,6 +266,18 @@ func TestRunInitE2E(t *testing.T) {
 			t.Errorf("config [sessions] missing non-empty id for %q; sessions=%v", name, sessions)
 		} else if !uuidRe.MatchString(id) {
 			t.Errorf("config [sessions] %q id is not a v4 UUID: %q", name, id)
+		}
+	}
+
+	// === Verify each session recorded a per-session agent type (issue 35) ===
+	supported := map[string]bool{}
+	for _, a := range adapter.SupportedAgents() {
+		supported[a] = true
+	}
+	for _, name := range []string{"main", "worker"} {
+		a := api.ReadSessionAgent(filepath.Join(workDir, name))
+		if a == "" || !supported[a] {
+			t.Errorf("session %q recorded invalid agent type %q", name, a)
 		}
 	}
 }
@@ -418,7 +433,7 @@ enabled = false
 
 		sessionDir := filepath.Join(homeDir, "agent_team", "worker")
 		os.MkdirAll(sessionDir, 0755)
-		api.WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "dev")
+		api.WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "dev", "claude")
 
 		origWd, _ := os.Getwd()
 		os.Chdir(sessionDir)

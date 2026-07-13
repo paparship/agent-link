@@ -271,10 +271,23 @@ interval = 5
 	return os.WriteFile(path, []byte(content), 0600)
 }
 
-// WriteSessionTOML writes the per-session .agentlink.toml marker file.
-func WriteSessionTOML(path, session, device string) error {
+// WriteSessionTOML writes the per-session .agentlink.toml marker file. The
+// agent type is written once at creation and is never rewritten (issue 35).
+func WriteSessionTOML(path, session, device, agent string) error {
 	content := fmt.Sprintf(`session = %q
 device = %q
-`, session, device)
+agent = %q
+`, session, device, agent)
 	return os.WriteFile(path, []byte(content), 0600)
+}
+
+// ReadSessionAgent returns the agent type recorded in <sessionDir>/.agentlink.toml.
+// Returns "" if the file or the field is absent (caller falls back to the
+// device-level default). The agent type is immutable per session (issue 35).
+func ReadSessionAgent(sessionDir string) string {
+	data, err := os.ReadFile(filepath.Join(sessionDir, ".agentlink.toml"))
+	if err != nil {
+		return ""
+	}
+	return ReadTOML(string(data), "agent")
 }

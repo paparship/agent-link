@@ -26,7 +26,7 @@ func setupTaskEnv(t *testing.T, serverURL string) string {
 
 	sessionDir := filepath.Join(homeDir, "worker")
 	os.MkdirAll(sessionDir, 0755)
-	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device")
+	WriteSessionTOML(filepath.Join(sessionDir, ".agentlink.toml"), "worker", "test-device", "claude")
 
 	return sessionDir
 }

@@ -124,7 +124,7 @@ func TestResumeSessionList_legacyFallback(t *testing.T) {
 	for _, s := range []string{"main", "worker"} {
 		dir := filepath.Join(baseDir, s)
 		os.MkdirAll(dir, 0755)
-		api.WriteSessionTOML(filepath.Join(dir, ".agentlink.toml"), s, "dev")
+		api.WriteSessionTOML(filepath.Join(dir, ".agentlink.toml"), s, "dev", "claude")
 	}
 	// Also add a non-session directory (no .agentlink.toml) to ensure it's skipped
 	os.MkdirAll(filepath.Join(baseDir, "not-a-session"), 0755)

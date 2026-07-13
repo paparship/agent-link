@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -157,6 +158,48 @@ func readExistingServer() string {
 		}
 	}
 	return ""
+}
+
+// promptAgentChoice asks which agent type a session should use, listing the
+// supported catalog annotated with local availability. Enter selects the
+// default (the first installed agent, else the first supported). The chosen
+// type is permanent for the session (issue 35).
+func promptAgentChoice(session string, supported, avail []string) string {
+	installed := map[string]bool{}
+	for _, a := range avail {
+		installed[a] = true
+	}
+	def := supported[0]
+	for _, a := range supported {
+		if installed[a] {
+			def = a
+			break
+		}
+	}
+	for {
+		fmt.Printf("session %q 用哪个 agent?(创建后不可更改)\n", session)
+		for i, a := range supported {
+			mark := "未检测到"
+			if installed[a] {
+				mark = "已安装"
+			}
+			suffix := ""
+			if a == def {
+				suffix = "  (默认)"
+			}
+			fmt.Printf("  %d. %-8s (%s)%s\n", i+1, a, mark, suffix)
+		}
+		choice := promptLine("选择(序号或名称)", def)
+		if n, err := strconv.Atoi(choice); err == nil && n >= 1 && n <= len(supported) {
+			return supported[n-1]
+		}
+		for _, a := range supported {
+			if choice == a {
+				return a
+			}
+		}
+		fmt.Printf("  无效选择:%q\n", choice)
+	}
 }
 
 // promptLine prints "label [def]: ", reads one line, and returns the trimmed

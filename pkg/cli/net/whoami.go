@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strings"
+
+	"github.com/team/agentlink/pkg/adapter"
 )
 
 type taskItem struct {
@@ -55,7 +59,11 @@ func RunWhoami() error {
 	var w whoamiResponse
 	json.NewDecoder(resp.Body).Decode(&w)
 
-	fmt.Printf("You are %s:%s\n", w.Device, w.Session)
+	agentType := ReadSessionAgent(filepath.Join(cfg.BaseDir, session))
+	if agentType == "" {
+		agentType = cfg.Agent
+	}
+	fmt.Printf("You are %s:%s (agent: %s)\n", w.Device, w.Session, agentType)
 	fmt.Printf("Current: %s\n", w.Current)
 	fmt.Printf("Inbox: %d received, %d sent\n", w.Inbox["received"], w.Inbox["sent"])
 
@@ -97,7 +105,8 @@ func RunWhoami() error {
 	fmt.Println("  agentlink task result <id> completed \"<msg>\"        — report result (worker)")
 	fmt.Println("  agentlink task status <id>                           — task detail")
 	fmt.Println("  agentlink task list                                  — full task list")
-	fmt.Println("  agentlink session add <name>                         — create new agent session")
+	fmt.Printf("  agentlink session add --type <%s> <name>   — create session (confirm agent type first, permanent)\n",
+		strings.Join(adapter.SupportedAgents(), "|"))
 	fmt.Println("  agentlink session remove <name>                      — remove agent session")
 	fmt.Println("  agentlink list --all                                 — team devices")
 	fmt.Println("  agentlink send [--interrupt] <target> \"<msg>\"       — send msg (no reply)")
