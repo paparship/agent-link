@@ -223,5 +223,32 @@ func readLine() string {
 			break
 		}
 	}
-	return strings.TrimRight(string(b), "\r")
+	return stripControl(strings.TrimRight(string(b), "\r"))
+}
+
+// stripControl removes ANSI escape sequences and other control characters from
+// a line. Terminals with "bracketed paste" enabled wrap pasted text in
+// ESC[200~ ... ESC[201~; since the wizard reads raw input it must strip those
+// markers (and any stray CSI sequences / control bytes) so a pasted value like
+// a server URL comes through clean.
+func stripControl(s string) string {
+	var b strings.Builder
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if r == 0x1b { // ESC — skip a following CSI sequence (ESC [ ... final)
+			if i+1 < len(runes) && runes[i+1] == '[' {
+				i += 2
+				for i < len(runes) && !(runes[i] >= 0x40 && runes[i] <= 0x7e) {
+					i++
+				}
+			}
+			continue
+		}
+		if r < 0x20 || r == 0x7f { // drop other control chars
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
