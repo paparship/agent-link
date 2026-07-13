@@ -1,6 +1,7 @@
 # 30 — session add 不把 session 名写入 config
 
 Type: BUG
+Status: CLOSED — 与 #29 同源。本文根因(`&& sid != ""` 空值即跳过)成立,但其前提"session_id 常常为空"的深层原因见 #29 的修正说明。统一由 **#34** 给出完整方案。
 
 ## 现象
 

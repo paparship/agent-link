@@ -1,6 +1,9 @@
 # 29 — restart session_id 丢失 + 不保存
 
 Type: BUG
+Status: CLOSED — 与 #30 同源(都卡在读不到 Claude 的 lastSessionId)。经源码核对,本文 Bug 29B 的根因分析不准确(见下方修正说明),且"启动后回读 lastSessionId"这一路线从根上不可行。统一由 **#34** 给出完整方案。
+
+> **根因修正(源码核对 Claude Code v2.1.197 后)**:`lastSessionId` 并非"迁移到独立文件",而是 (a) 存在 `~/.claude.json` 的 `projects[<cwd>]` 下、而非顶层;(b) **仅在 claude 退出 / 切换会话时写盘**,会话运行期间不更新。因此 `init`/`restart` 启动 claude 后等 10s 回读,必然读到*上一次*会话的旧 id 或空值——这才是 29B 的真正病根。详见 #34。
 
 ## 现象
 
