@@ -8,3 +8,5 @@
 deploy/server
 deploy/agentlink
 deploy/server.log
+.env
+*.local

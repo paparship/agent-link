@@ -4,10 +4,10 @@ set -e
 
 SERVER=YOUR_SERVER_IP
 PASSWORD=YOUR_REGISTER_PASSWORD
-LOCAL_DEVICE=jiefan-local
+LOCAL_DEVICE=YOUR_USER-local
 REMOTE_DEVICE=YOUR_HOSTNAME
-REMOTE_BIN=/home/jiefan/agent-link/deploy/agentlink
-REMOTE_PROJECT=/home/jiefan/agentlink-server
+REMOTE_BIN=/home/YOUR_USER/agent-link/deploy/agentlink
+REMOTE_PROJECT=/home/YOUR_USER/agentlink-server
 LOCAL_PROJECT=~/agentlink-test
 
 echo "=== 1. Build ==="
