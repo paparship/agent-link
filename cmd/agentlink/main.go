@@ -130,7 +130,11 @@ func cmdInit(args []string) {
 	fmt.Println()
 	fmt.Println("Attaching to main session...")
 
-	attach := exec.Command("tmux", "attach", "-t", "main")
+	// Use "=main" for an exact match. Without it tmux falls back to prefix
+	// matching, so a failed "main" launch (only "main-poller" left) would drop
+	// the user into the blank poller window instead of erroring (see issue 32;
+	// RunAttach was fixed but this post-init attach was missed).
+	attach := exec.Command("tmux", "attach", "-t", "=main")
 	attach.Stdin = os.Stdin
 	attach.Stdout = os.Stdout
 	attach.Stderr = os.Stderr

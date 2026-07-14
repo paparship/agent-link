@@ -66,7 +66,7 @@ func (p *Poller) Run() error {
 			fmt.Fprintf(p.Stdout, "message from %s:%s\n", msg.FromDevice, msg.FromSession)
 			if msg.Interrupt {
 				fmt.Fprintf(p.Stdout, "interrupt: sending Ctrl+C\n")
-				exec.Command("tmux", "send-keys", "-t", p.Session, "Escape").Run()
+				exec.Command("tmux", "send-keys", "-t", "="+p.Session, "Escape").Run()
 				time.Sleep(3 * time.Second)
 			} else {
 				p.waitForIdle()
@@ -230,7 +230,10 @@ func (p *Poller) initDefaults() {
 
 var tmuxCapturePane = func(session string) (string, error) {
 	var stdout bytes.Buffer
-	cmd := exec.Command("tmux", "capture-pane", "-p", "-t", session)
+	// "=session" forces an exact match: if the agent session is gone, this must
+	// fail rather than prefix-match "<session>-poller" (the poller's own pane)
+	// and make the poller capture/inject into itself (issue 32).
+	cmd := exec.Command("tmux", "capture-pane", "-p", "-t", "="+session)
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
 		return "", err
@@ -239,12 +242,12 @@ var tmuxCapturePane = func(session string) (string, error) {
 }
 
 var tmuxSendKeys = func(session, text string) error {
-	cmd1 := exec.Command("tmux", "send-keys", "-l", "-t", session, text)
+	cmd1 := exec.Command("tmux", "send-keys", "-l", "-t", "="+session, text)
 	if err := cmd1.Run(); err != nil {
 		return err
 	}
 	time.Sleep(50 * time.Millisecond)
-	cmd2 := exec.Command("tmux", "send-keys", "-t", session, "Enter")
+	cmd2 := exec.Command("tmux", "send-keys", "-t", "="+session, "Enter")
 	return cmd2.Run()
 }
 
