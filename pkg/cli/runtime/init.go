@@ -270,8 +270,8 @@ func launchSessions(baseDir, defaultAgent string, opts launchOpts) (map[string]s
 		// leaves no trace (see issue 32). stderr goes to the file; stdout stays
 		// on the pane tty so the TUI is unaffected.
 		logPath := sessionLogPath(session)
-		wrapped := fmt.Sprintf("%s 2>>%s; echo \"[exited code=$? at $(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)]\" >>%s",
-			shellJoin(append([]string{name}, args...)), shellQuote(logPath), shellQuote(logPath))
+		wrapped := fmt.Sprintf("%s%s 2>>%s; echo \"[exited code=$? at $(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)]\" >>%s",
+			rootEnvPrefix(launcher), shellJoin(append([]string{name}, args...)), shellQuote(logPath), shellQuote(logPath))
 		cmdArgs := []string{"new-session", "-d", "-s", session, "-c", dir, "sh", "-c", wrapped}
 		if err := exec.Command("tmux", cmdArgs...).Run(); err != nil {
 			return nil, fmt.Errorf("cannot create tmux session %q: %w", session, err)
@@ -357,6 +357,25 @@ func shellJoin(args []string) string {
 		quoted[i] = shellQuote(a)
 	}
 	return strings.Join(quoted, " ")
+}
+
+// rootEnvPrefix returns a shell "KEY=VALUE " prefix carrying launcher.RootEnv()
+// when the current process is root (euid 0), else "". It lets the launched
+// agent inherit env it needs to run as root — e.g. IS_SANDBOX=1 so Claude Code
+// accepts --dangerously-skip-permissions. Non-root launches get nothing extra.
+func rootEnvPrefix(launcher adapter.AgentLauncher) string {
+	if os.Geteuid() != 0 {
+		return ""
+	}
+	env := launcher.RootEnv()
+	if len(env) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(env))
+	for i, kv := range env {
+		quoted[i] = kv
+	}
+	return strings.Join(quoted, " ") + " "
 }
 
 // resolveAgentFor decides a session's agent type. Interactive callers prompt

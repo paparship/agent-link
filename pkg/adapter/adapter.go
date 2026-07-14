@@ -36,6 +36,11 @@ type AgentLauncher interface {
 	// InitTemplate returns the CLAUDE.md content for a given session and device.
 	// agentlink writes this file into each session directory during init.
 	InitTemplate(session string, device string) string
+
+	// RootEnv returns extra "KEY=VALUE" environment entries the agent needs to
+	// run unattended as root. Applied by the launch code ONLY when the current
+	// process is root (euid 0). Empty for agents that need nothing special.
+	RootEnv() []string
 }
 
 // IdleDetector checks whether the agent's tmux pane is ready for input.

@@ -257,7 +257,11 @@ func RunAttach(session string) error {
 		return fmt.Errorf("unknown agent type %q for session %q", agent, session)
 	}
 	name, args := launcher.Command()
-	cmdArgs := append([]string{"new-session", "-c", sessionDir, name}, args...)
+	// Launch through sh so we can inject root env (e.g. IS_SANDBOX=1 for Claude
+	// Code under root); `exec` hands the pane tty straight to the agent so the
+	// TUI is unaffected. envPrefix is empty when not running as root.
+	inner := rootEnvPrefix(launcher) + "exec " + shellJoin(append([]string{name}, args...))
+	cmdArgs := []string{"new-session", "-c", sessionDir, "sh", "-c", inner}
 	cmd := exec.Command("tmux", cmdArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

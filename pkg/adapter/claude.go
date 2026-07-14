@@ -31,6 +31,15 @@ func (l *ClaudeCodeLauncher) NewSessionArgs(sessionID string) []string {
 	return []string{"--session-id", sessionID, "--dangerously-skip-permissions"}
 }
 
+// RootEnv returns IS_SANDBOX=1, which Claude Code requires before it will honor
+// --dangerously-skip-permissions while running as root (src/setup.ts refuses
+// otherwise). agentlink already commits to --dangerously-skip-permissions, so
+// without this the flag is unusable in root environments. Only applied when the
+// launch process is actually root.
+func (l *ClaudeCodeLauncher) RootEnv() []string {
+	return []string{"IS_SANDBOX=1"}
+}
+
 func (l *ClaudeCodeLauncher) CheckPrereqs() error {
 	var missing []string
 	for _, cmd := range []string{"tmux", "claude"} {

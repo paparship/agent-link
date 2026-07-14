@@ -44,3 +44,18 @@ func TestRegistryUnknownAgent(t *testing.T) {
 		t.Error("IsAvailable(unknown) should be false")
 	}
 }
+
+func TestRootEnv(t *testing.T) {
+	for _, a := range []string{"claude", "tclaude"} {
+		env := NewLauncher(a).RootEnv()
+		found := false
+		for _, kv := range env {
+			if kv == "IS_SANDBOX=1" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s RootEnv missing IS_SANDBOX=1; got %v", a, env)
+		}
+	}
+}
