@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +15,9 @@ import (
 )
 
 func TestRunSessionAdd(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude not in PATH, skipping")
+	}
 	// Mock server that handles both GET /agents/list and PATCH /agents/sessions
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
