@@ -12,6 +12,10 @@ import (
 	rt "github.com/team/agentlink/pkg/cli/runtime"
 )
 
+// version is set at build time via -ldflags "-X main.version=<tag>" (see
+// Makefile / CI release). Defaults to "dev" for plain local builds.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -43,6 +47,8 @@ func main() {
 		cmdResume(os.Args[2:])
 	case "uninstall":
 		cmdUninstall()
+	case "version", "--version", "-v":
+		fmt.Printf("agentlink %s\n", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		printUsage()
@@ -73,6 +79,7 @@ Usage:
   agentlink attach <session>
   agentlink restart
   agentlink uninstall
+  agentlink version
 `)
 }
 

@@ -78,6 +78,8 @@ TMUX_MISSING=0
 command -v tmux >/dev/null 2>&1 || TMUX_MISSING=1
 
 echo "✓ agentlink installed to $BINDIR/$BINARY"
+installed_version="$("$BINDIR/$BINARY" version 2>/dev/null | awk '{print $2}')"
+echo "  version: ${installed_version:-unknown}"
 if [ "$TMUX_MISSING" -eq 1 ]; then
   echo ""
   echo "  ⚠ tmux is required. Install it:"
