@@ -100,9 +100,6 @@ func ConfirmInitSummary(opts *InitOptions) bool {
 	fmt.Printf("  Device : %s\n", opts.Device)
 	fmt.Printf("  Path   : %s\n", opts.Path)
 	fmt.Printf("  Poll   : %s\n", poll)
-	if opts.Force {
-		fmt.Println("  注意   : --force 已启用,已存在的目录将被覆盖")
-	}
 	fmt.Println()
 	return promptConfirm("确认继续?")
 }

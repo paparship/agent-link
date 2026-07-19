@@ -46,7 +46,7 @@ func main() {
 	case "restart":
 		cmdResume(os.Args[2:])
 	case "uninstall":
-		cmdUninstall()
+		cmdUninstall(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("agentlink %s\n", version)
 	default:
@@ -78,7 +78,7 @@ Usage:
   agentlink session remove <name>
   agentlink attach <session>
   agentlink restart
-  agentlink uninstall
+  agentlink uninstall [--purge]
   agentlink version
 `)
 }
@@ -89,7 +89,6 @@ func cmdInit(args []string) {
 	password := fs.String("password", "", "Registration password")
 	device := fs.String("device", "", "Device name (default: hostname)")
 	noPoll := fs.Bool("no-poll", false, "Disable auto-polling (default: false)")
-	force := fs.Bool("force", false, "Force re-register if device exists (default: false)")
 	fs.Parse(args)
 
 	path := fs.Arg(0)
@@ -103,7 +102,6 @@ func cmdInit(args []string) {
 		Device:   *device,
 		Path:     path,
 		NoPoll:   *noPoll,
-		Force:    *force,
 	}
 
 	// When a required field is missing, run the interactive wizard on a
@@ -394,8 +392,11 @@ func cmdResume(args []string) {
 	}
 }
 
-func cmdUninstall() {
-	if err := rt.RunUninstall(); err != nil {
+func cmdUninstall(args []string) {
+	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
+	purge := fs.Bool("purge", false, "Also deregister this device from the server (default: local cleanup only)")
+	fs.Parse(args)
+	if err := rt.RunUninstall(*purge); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

@@ -238,7 +238,7 @@ func TestRunUninstall(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		if err := RunUninstall(); err != nil {
+		if err := RunUninstall(true); err != nil {
 			t.Fatal(err)
 		}
 
@@ -248,7 +248,35 @@ func TestRunUninstall(t *testing.T) {
 		}
 	})
 
-	t.Run("uninstall server error", func(t *testing.T) {
+	t.Run("uninstall local-only default does not call server", func(t *testing.T) {
+		called := false
+		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer mockSrv.Close()
+
+		homeDir := t.TempDir()
+		t.Setenv("HOME", homeDir)
+		agentlinkDir := filepath.Join(homeDir, ".agentlink")
+		os.MkdirAll(agentlinkDir, 0755)
+		api.WriteConfigTOML(filepath.Join(agentlinkDir, "config.toml"), mockSrv.URL, "test-device", homeDir, "claude", false, nil)
+		creds := map[string]string{"api_key": "sk_live_" + strings.Repeat("a", 64)}
+		credData, _ := json.MarshalIndent(creds, "", "  ")
+		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
+
+		if err := RunUninstall(false); err != nil {
+			t.Fatal(err)
+		}
+		if called {
+			t.Error("default uninstall must not contact the server")
+		}
+		if _, err := os.Stat(agentlinkDir); err == nil {
+			t.Error("expected .agentlink to be removed even without purge")
+		}
+	})
+
+	t.Run("uninstall purge with server error still cleans local", func(t *testing.T) {
 		mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{"error": "server error"})
@@ -265,14 +293,13 @@ func TestRunUninstall(t *testing.T) {
 		credData, _ := json.MarshalIndent(creds, "", "  ")
 		os.WriteFile(filepath.Join(agentlinkDir, "credentials.json"), credData, 0600)
 
-		err := RunUninstall()
-		if err == nil {
-			t.Fatal("expected error for purge with server error")
+		// Server failure during --purge is a warning, not an abort:
+		// local cleanup must still complete and the call must succeed.
+		if err := RunUninstall(true); err != nil {
+			t.Fatalf("purge with server error should not fail: %v", err)
 		}
-
-		// Verify local files NOT removed on API failure
-		if _, err := os.Stat(agentlinkDir); err != nil {
-			t.Error("expected .agentlink directory to remain after API failure")
+		if _, err := os.Stat(agentlinkDir); err == nil {
+			t.Error("expected .agentlink to be removed despite server error")
 		}
 	})
 
@@ -280,7 +307,7 @@ func TestRunUninstall(t *testing.T) {
 		homeDir := t.TempDir()
 		t.Setenv("HOME", homeDir)
 
-		err := RunUninstall()
+		err := RunUninstall(false)
 		if err == nil {
 			t.Fatal("expected error")
 		}

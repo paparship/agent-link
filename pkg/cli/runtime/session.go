@@ -163,8 +163,13 @@ func RunSessionRemove(name string) error {
 	return nil
 }
 
-func RunUninstall() error {
-	cfg, creds, err := api.LoadAuth()
+// RunUninstall tears down the local install. By default it only cleans up
+// locally (kill tmux, remove work dir + ~/.agentlink + the binary) and never
+// depends on the server being reachable. With purge=true it also deregisters
+// the device from the server — but a server failure there is a warning, not a
+// reason to abort local cleanup (issue 38, per issue 18's original design).
+func RunUninstall(purge bool) error {
+	cfg, err := api.LoadConfig()
 	if err != nil {
 		return err
 	}
@@ -172,12 +177,18 @@ func RunUninstall() error {
 	// Kill tmux sessions (best-effort)
 	killSessionSessions(cfg.BaseDir)
 
-	// Deregister from server
-	resp, err := api.APIDo(cfg, creds, "DELETE", "/agents/device", nil)
-	if err != nil {
-		return err
+	// Optionally deregister from the server. Do this before deleting
+	// ~/.agentlink (which holds the credentials). Failure is non-fatal so a
+	// down/unreachable server can never block local cleanup.
+	if purge {
+		if creds, cerr := api.LoadCredentials(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: no credentials, skipping server deregister: %v\n", cerr)
+		} else if resp, derr := api.APIDo(cfg, creds, "DELETE", "/agents/device", nil); derr != nil {
+			fmt.Fprintf(os.Stderr, "warning: server deregister failed (continuing local cleanup): %v\n", derr)
+		} else {
+			resp.Body.Close()
+		}
 	}
-	resp.Body.Close()
 
 	// Delete work directory
 	if cfg.BaseDir != "" {
@@ -189,11 +200,26 @@ func RunUninstall() error {
 	// Clean up local .agentlink directory
 	agentlinkDir := filepath.Join(os.Getenv("HOME"), ".agentlink")
 	if err := os.RemoveAll(agentlinkDir); err != nil {
-		return fmt.Errorf("warning: device unregistered from server but could not remove %s: %w", agentlinkDir, err)
+		fmt.Fprintf(os.Stderr, "warning: could not remove %s: %v\n", agentlinkDir, err)
 	}
 
-	fmt.Println("✓ Device unregistered and local files cleaned")
-	fmt.Println("  To also remove agentlink from PATH, edit ~/.bashrc or ~/.zshrc")
+	// Remove the installed binary (best-effort). On Linux unlinking a running
+	// executable is fine — the current process keeps running from the open
+	// inode; new invocations are gone. Guard on the name so we never remove a
+	// differently-named host (e.g. a test runner).
+	if exe, e := os.Executable(); e == nil && filepath.Base(exe) == "agentlink" {
+		if rerr := os.Remove(exe); rerr == nil {
+			fmt.Printf("✓ removed binary %s\n", exe)
+		} else {
+			fmt.Printf("  (remove the binary manually: rm %s)\n", exe)
+		}
+	}
+
+	if purge {
+		fmt.Println("✓ Device deregistered and local files cleaned")
+	} else {
+		fmt.Println("✓ Local files cleaned (device left registered; use --purge to also deregister)")
+	}
 	return nil
 }
 

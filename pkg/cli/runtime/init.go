@@ -29,7 +29,6 @@ type InitOptions struct {
 	// RunInit (interactive prompt or auto-detect) when empty.
 	SessionAgents map[string]string
 	NoPoll        bool
-	Force         bool
 	// Interactive is set when init ran the terminal wizard. It lets RunInit
 	// re-prompt for the password on a 401 instead of failing outright.
 	Interactive bool
@@ -97,9 +96,7 @@ func RunInit(opts *InitOptions) error {
 	}
 
 	if _, err := os.Stat(absPath); err == nil {
-		if !opts.Force {
-			return fmt.Errorf("directory %q already exists; use --force to override", absPath)
-		}
+		return fmt.Errorf("directory %q already exists; run 'agentlink uninstall' first, then init again", absPath)
 	}
 
 	// Register first (network-only, no local side effects) so a failure —

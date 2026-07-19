@@ -156,7 +156,6 @@ type RegisterRequest struct {
 	Device           string   `json:"device"`
 	Sessions         []string `json:"sessions"`
 	RegisterPassword string   `json:"register_password"`
-	Force            bool     `json:"force,omitempty"`
 }
 
 type RegisterResponse struct {
@@ -222,36 +221,31 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists > 0 {
-		if req.RegisterPassword != s.registerPassword {
-			writeError(w, http.StatusUnauthorized, "invalid register password"+"; use --force to override")
+		// Device already registered (register password already verified above):
+		// reuse the identity and rotate its API key, keeping the device. To
+		// fully reset a device, run `agentlink uninstall --purge` then init
+		// again — the server no longer wipes a device on a register flag, since
+		// the register password is a shared secret (issue 38).
+		apiKey, apiKeyHash, err := generateAPIKey()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if req.Force {
-			s.deleteDeviceData(r.Context(), req.Device)
-			// Fall through to normal registration
-		} else {
-			// Reuse: generate new API key, update device record
-			apiKey, apiKeyHash, err := generateAPIKey()
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "internal error")
-				return
-			}
-			deviceKey := "agentlink:device:" + req.Device
-			oldHash, _ := s.rdb.HGet(r.Context(), deviceKey, "api_key_hash").Result()
-			if oldHash != "" {
-				s.rdb.Del(r.Context(), "agentlink:api_key:"+oldHash)
-			}
-			now := time.Now().UTC().Format(time.RFC3339)
-			s.rdb.HSet(r.Context(), deviceKey, "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
-			s.rdb.Set(r.Context(), "agentlink:api_key:"+apiKeyHash, req.Device, 0)
-			writeJSON(w, http.StatusOK, RegisterResponse{
-				APIKey:       apiKey,
-				Device:       req.Device,
-				Sessions:     req.Sessions,
-				RegisteredAt: now,
-			})
-			return
+		deviceKey := "agentlink:device:" + req.Device
+		oldHash, _ := s.rdb.HGet(r.Context(), deviceKey, "api_key_hash").Result()
+		if oldHash != "" {
+			s.rdb.Del(r.Context(), "agentlink:api_key:"+oldHash)
 		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		s.rdb.HSet(r.Context(), deviceKey, "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
+		s.rdb.Set(r.Context(), "agentlink:api_key:"+apiKeyHash, req.Device, 0)
+		writeJSON(w, http.StatusOK, RegisterResponse{
+			APIKey:       apiKey,
+			Device:       req.Device,
+			Sessions:     req.Sessions,
+			RegisteredAt: now,
+		})
+		return
 	}
 
 	// Generate API key
