@@ -789,6 +789,52 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	inboxKey := "agentlink:inbox:" + device + ":" + session
 	currentMsgKey := "agentlink:current_msg:" + device + ":" + session
+	processingKey := "agentlink:processing:" + device + ":" + session
+
+	// Reliable path (poller sets ?reserve=1): reserve into a processing slot
+	// instead of destructively popping, so a message survives inject failure /
+	// dead agent / poller crash until it is acked via POST /inbox/ack (issue 37).
+	if r.URL.Query().Get("reserve") == "1" {
+		// Redeliver the in-flight (unacked) message if one is still parked.
+		if data, err := s.rdb.LIndex(r.Context(), processingKey, 0).Result(); err == nil && data != "" {
+			var m Message
+			json.Unmarshal([]byte(data), &m)
+			writeJSON(w, http.StatusOK, PullResponse{Items: []Message{m}})
+			return
+		}
+		// Otherwise reserve the next usable message, skipping stale tasks.
+		reserved := make([]Message, 0, 1)
+		for {
+			data, err := s.rdb.RPopLPush(r.Context(), inboxKey, processingKey).Result()
+			if err == redis.Nil {
+				break
+			}
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			var m Message
+			json.Unmarshal([]byte(data), &m)
+			if m.Type == MsgTypeTask && m.TaskID != "" {
+				taskKey := "agentlink:task:" + m.TaskID
+				st, _ := s.rdb.HGet(r.Context(), taskKey, "status").Result()
+				if st != "issued" {
+					s.rdb.LRem(r.Context(), processingKey, 1, data) // stale, drop it
+					continue
+				}
+				s.rdb.HSet(r.Context(), taskKey, "status", "in_progress")
+			}
+			if m.Type == MsgTypeMsg {
+				s.rdb.HSet(r.Context(), currentMsgKey, "title", msgTitle(m.Title, m.Content), "started_at", now)
+				s.rdb.Expire(r.Context(), currentMsgKey, 10*time.Minute)
+			}
+			reserved = append(reserved, m)
+			break
+		}
+		writeJSON(w, http.StatusOK, PullResponse{Items: reserved})
+		return
+	}
+
 	items := make([]Message, 0)
 
 	// Clear prior current_msg: a new pull means the agent moved on (either
@@ -839,6 +885,43 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, PullResponse{Items: items})
+}
+
+// handleAck removes a message from the session's processing slot once the
+// poller confirms it was injected into the agent. Until acked, the reserved
+// message is redelivered on the next reserve-pull, so an inject failure / dead
+// agent / poller crash no longer loses it (issue 37). Idempotent: acking an id
+// that is not the parked message is a no-op.
+func (s *Server) handleAck(w http.ResponseWriter, r *http.Request) {
+	device, _ := r.Context().Value(contextKeyDevice).(string)
+
+	var req struct {
+		Session string `json:"session"`
+		ID      string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Session == "" || !deviceNameRE.MatchString(req.Session) {
+		writeError(w, http.StatusBadRequest, "invalid session name")
+		return
+	}
+	if req.ID == "" {
+		writeError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+
+	processingKey := "agentlink:processing:" + device + ":" + req.Session
+	if data, err := s.rdb.LIndex(r.Context(), processingKey, 0).Result(); err == nil && data != "" {
+		var m Message
+		json.Unmarshal([]byte(data), &m)
+		if m.ID == req.ID {
+			s.rdb.LRem(r.Context(), processingKey, 1, data)
+			s.rdb.Del(r.Context(), "agentlink:current_msg:"+device+":"+req.Session)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleSendTask(w http.ResponseWriter, r *http.Request) {

@@ -891,3 +891,87 @@ func TestDeviceNameRegex(t *testing.T) {
 		}
 	}
 }
+
+// TestReservePullAck covers the reliable-delivery path (issue 37): reserve-pull
+// parks the message in a processing slot instead of deleting it; it is
+// redelivered until acked; ack removes it.
+func TestReservePullAck(t *testing.T) {
+	ctx := context.Background()
+
+	regBody := `{"device":"reserve-test","sessions":["main","worker"],"register_password":"test-password"}`
+	resp, err := http.Post(ts.URL+"/agents/register", "application/json", strings.NewReader(regBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var regResp RegisterResponse
+	json.NewDecoder(resp.Body).Decode(&regResp)
+	resp.Body.Close()
+	apiKey := regResp.APIKey
+
+	hash := sha256.Sum256([]byte(apiKey))
+	hashHex := hex.EncodeToString(hash[:])
+	inboxKey := "agentlink:inbox:reserve-test:worker"
+	procKey := "agentlink:processing:reserve-test:worker"
+	t.Cleanup(func() {
+		testRdb.Del(ctx, "agentlink:device:reserve-test", "agentlink:api_key:"+hashHex, inboxKey, procKey)
+	})
+
+	// Seed one message.
+	testRdb.Del(ctx, inboxKey, procKey)
+	msg := Message{ID: "rmsg-1", Type: "msg", FromDevice: "reserve-test", FromSession: "main", Content: "hello", CreatedAt: "2026-01-01T00:00:00Z"}
+	data, _ := json.Marshal(msg)
+	testRdb.LPush(ctx, inboxKey, data)
+
+	reservePull := func() PullResponse {
+		req, _ := http.NewRequest("GET", ts.URL+"/inbox/pull?session=worker&reserve=1", nil)
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		var pr PullResponse
+		json.NewDecoder(r.Body).Decode(&pr)
+		return pr
+	}
+
+	// 1. reserve-pull returns the message but does NOT delete it (parked).
+	pr := reservePull()
+	if len(pr.Items) != 1 || pr.Items[0].ID != "rmsg-1" {
+		t.Fatalf("reserve-pull: expected rmsg-1, got %+v", pr.Items)
+	}
+	if n, _ := testRdb.LLen(ctx, inboxKey).Result(); n != 0 {
+		t.Errorf("inbox should be empty after reserve, got %d", n)
+	}
+	if n, _ := testRdb.LLen(ctx, procKey).Result(); n != 1 {
+		t.Errorf("processing should hold 1 reserved msg, got %d", n)
+	}
+
+	// 2. reserve-pull again without ack redelivers the SAME message.
+	pr = reservePull()
+	if len(pr.Items) != 1 || pr.Items[0].ID != "rmsg-1" {
+		t.Fatalf("redelivery: expected rmsg-1 again, got %+v", pr.Items)
+	}
+
+	// 3. ack removes it.
+	ackBody := `{"session":"worker","id":"rmsg-1"}`
+	req, _ := http.NewRequest("POST", ts.URL+"/inbox/ack", strings.NewReader(ackBody))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	ar, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.StatusCode != http.StatusOK {
+		t.Fatalf("ack: expected 200, got %d", ar.StatusCode)
+	}
+	ar.Body.Close()
+	if n, _ := testRdb.LLen(ctx, procKey).Result(); n != 0 {
+		t.Errorf("processing should be empty after ack, got %d", n)
+	}
+
+	// 4. reserve-pull now returns nothing.
+	pr = reservePull()
+	if len(pr.Items) != 0 {
+		t.Fatalf("after ack: expected empty, got %+v", pr.Items)
+	}
+}

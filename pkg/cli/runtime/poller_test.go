@@ -3,12 +3,14 @@ package rt
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -337,4 +339,105 @@ enabled = false
 			t.Fatal(err)
 		}
 	})
+}
+
+// TestPoller_acksAfterInjectAndDedups: a successful inject is acked, and a
+// message redelivered because its ack "was lost" is re-acked, not re-injected
+// (issue 37 dedup via lastInjectedID). The mock always returns the same msg.
+func TestPoller_acksAfterInjectAndDedups(t *testing.T) {
+	var mu sync.Mutex
+	var acked []string
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/inbox/ack" {
+			var body struct{ Session, ID string }
+			json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			acked = append(acked, body.ID)
+			mu.Unlock()
+			w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(pollerPullResponse{
+			Items: []pollerInboxItem{{ID: "m1", Type: "msg", Content: "hi", FromDevice: "dev-a", FromSession: "main"}},
+		})
+	}))
+	defer mockSrv.Close()
+
+	injectCount := 0
+	captureCalls := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &Poller{
+		Session: "worker", Server: mockSrv.URL, APIKey: "sk_test",
+		Interval: 5 * time.Millisecond, Ctx: ctx, Stdout: io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
+		capturePane: func(string) (string, error) {
+			captureCalls++
+			if captureCalls >= 5 {
+				cancel()
+			}
+			return "❯\n", nil
+		},
+		sendKeys: func(_ string, _ string) error { injectCount++; return nil },
+		httpDo:   http.DefaultClient.Do,
+	}
+	p.Run()
+
+	if injectCount != 1 {
+		t.Errorf("expected exactly 1 inject (dedup should suppress the rest), got %d", injectCount)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(acked) == 0 || acked[0] != "m1" {
+		t.Errorf("expected message m1 to be acked, got %v", acked)
+	}
+}
+
+// TestPoller_noAckOnSendKeysFailure: when inject fails, the message must NOT be
+// acked (so the server redelivers it), and the poller keeps retrying (issue 37).
+func TestPoller_noAckOnSendKeysFailure(t *testing.T) {
+	var mu sync.Mutex
+	ackCount := 0
+	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/inbox/ack" {
+			mu.Lock()
+			ackCount++
+			mu.Unlock()
+			w.Write([]byte(`{"ok":true}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(pollerPullResponse{
+			Items: []pollerInboxItem{{ID: "m1", Type: "msg", Content: "hi", FromDevice: "dev-a", FromSession: "main"}},
+		})
+	}))
+	defer mockSrv.Close()
+
+	injectAttempts := 0
+	captureCalls := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	p := &Poller{
+		Session: "worker", Server: mockSrv.URL, APIKey: "sk_test",
+		Interval: 5 * time.Millisecond, Ctx: ctx, Stdout: io.Discard,
+		IdleDetector: &mockIdleDetector{busy: false, promptEmpty: true},
+		capturePane: func(string) (string, error) {
+			captureCalls++
+			if captureCalls >= 4 {
+				cancel()
+			}
+			return "❯\n", nil
+		},
+		sendKeys: func(_ string, _ string) error { injectAttempts++; return fmt.Errorf("boom") },
+		httpDo:   http.DefaultClient.Do,
+	}
+	p.Run()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if ackCount != 0 {
+		t.Errorf("must not ack when inject fails, got %d acks", ackCount)
+	}
+	if injectAttempts < 2 {
+		t.Errorf("expected retries on failure (>=2 attempts), got %d", injectAttempts)
+	}
 }

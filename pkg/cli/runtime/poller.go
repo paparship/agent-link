@@ -35,6 +35,11 @@ type Poller struct {
 	// Cancellation. When nil, context.Background() is used.
 	Ctx context.Context
 
+	// lastInjectedID is the id of the message we last injected successfully.
+	// Used to skip a redelivered message whose ack didn't land (issue 37),
+	// so a lost ack causes a re-ack, not a duplicate injection.
+	lastInjectedID string
+
 	// Overridable for testing.
 	capturePane func(session string) (string, error)
 	sendKeys    func(session, text string) error
@@ -63,33 +68,48 @@ func (p *Poller) Run() error {
 		}
 
 		if msg != nil {
-			fmt.Fprintf(p.Stdout, "message from %s:%s\n", msg.FromDevice, msg.FromSession)
-			if msg.Interrupt {
-				fmt.Fprintf(p.Stdout, "interrupt: sending Ctrl+C\n")
-				exec.Command("tmux", "send-keys", "-t", "="+p.Session, "Escape").Run()
-				time.Sleep(3 * time.Second)
+			// Dedup: a message we already injected, redelivered because its ack
+			// didn't land last time. Re-ack, don't re-inject (issue 37).
+			dup := msg.ID != "" && msg.ID == p.lastInjectedID
+			if dup {
+				p.ack(msg.ID)
 			} else {
-				p.waitForIdle()
-			}
+				fmt.Fprintf(p.Stdout, "message from %s:%s\n", msg.FromDevice, msg.FromSession)
+				if msg.Interrupt {
+					fmt.Fprintf(p.Stdout, "interrupt: sending Ctrl+C\n")
+					exec.Command("tmux", "send-keys", "-t", "="+p.Session, "Escape").Run()
+					time.Sleep(3 * time.Second)
+				} else {
+					p.waitForIdle()
+				}
 
-			pane, err := p.capturePane(p.Session)
-			if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
-				injectContent := msg.Content
-				if msg.Type == "msg" {
-					prefix := fmt.Sprintf("[来自 %s:%s 的消息] ", msg.FromDevice, msg.FromSession)
-					injectContent = prefix + msg.Content
-				} else if msg.Type == "task" {
-					injectContent = fmt.Sprintf(
-						"[来自 %s:%s 的任务 %s]\n%s\n完成后请执行: agentlink task result %s completed \"<结果>\"\n如需挂起: agentlink task result %s suspended \"<原因>\"",
-						msg.FromDevice, msg.FromSession, msg.TaskID,
-						msg.Content,
-						msg.TaskID, msg.TaskID,
-					)
+				pane, err := p.capturePane(p.Session)
+				if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
+					injectContent := msg.Content
+					if msg.Type == "msg" {
+						prefix := fmt.Sprintf("[来自 %s:%s 的消息] ", msg.FromDevice, msg.FromSession)
+						injectContent = prefix + msg.Content
+					} else if msg.Type == "task" {
+						injectContent = fmt.Sprintf(
+							"[来自 %s:%s 的任务 %s]\n%s\n完成后请执行: agentlink task result %s completed \"<结果>\"\n如需挂起: agentlink task result %s suspended \"<原因>\"",
+							msg.FromDevice, msg.FromSession, msg.TaskID,
+							msg.Content,
+							msg.TaskID, msg.TaskID,
+						)
+					}
+					fmt.Fprintf(p.Stdout, "inject: %s\n", injectContent)
+					if err := p.sendKeys(p.Session, injectContent); err != nil {
+						// Not acked → the message stays reserved on the server and
+						// is redelivered next tick, instead of being lost (issue 37).
+						fmt.Fprintf(p.Stdout, "send-keys error: %s (will retry)\n", err)
+					} else {
+						// Injected → confirm delivery so the server drops it.
+						p.lastInjectedID = msg.ID
+						p.ack(msg.ID)
+					}
 				}
-				fmt.Fprintf(p.Stdout, "inject: %s\n", injectContent)
-				if err := p.sendKeys(p.Session, injectContent); err != nil {
-					fmt.Fprintf(p.Stdout, "send-keys error: %s\n", err)
-				}
+				// If not injected (agent busy / dead / capture failed): no ack,
+				// so the reserved message is redelivered on a later tick.
 			}
 		}
 
@@ -134,7 +154,7 @@ type pollerPullResponse struct {
 }
 
 func (p *Poller) pullOne() (*pollerInboxItem, error) {
-	url := fmt.Sprintf("%s/inbox/pull?session=%s&limit=1", p.Server, p.Session)
+	url := fmt.Sprintf("%s/inbox/pull?session=%s&limit=1&reserve=1", p.Server, p.Session)
 	req, err := http.NewRequestWithContext(p.ctx(), "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -166,6 +186,27 @@ func (p *Poller) pullOne() (*pollerInboxItem, error) {
 		return nil, nil
 	}
 	return &pr.Items[0], nil
+}
+
+// ack confirms a reserved message was injected, so the server drops it from the
+// processing slot. Best-effort: a failed ack just means the message is
+// redelivered and de-duplicated via lastInjectedID (issue 37).
+func (p *Poller) ack(id string) {
+	if id == "" {
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"session": p.Session, "id": id})
+	req, err := http.NewRequestWithContext(p.ctx(), "POST", p.Server+"/inbox/ack", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+p.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.httpDo(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 func (p *Poller) waitForIdle() {
