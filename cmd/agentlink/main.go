@@ -46,7 +46,7 @@ func main() {
 	case "restart":
 		cmdResume(os.Args[2:])
 	case "uninstall":
-		cmdUninstall(os.Args[2:])
+		cmdUninstall()
 	case "version", "--version", "-v":
 		fmt.Printf("agentlink %s\n", version)
 	default:
@@ -78,7 +78,7 @@ Usage:
   agentlink session remove <name>
   agentlink attach <session>
   agentlink restart
-  agentlink uninstall [--purge]
+  agentlink uninstall
   agentlink version
 `)
 }
@@ -123,7 +123,7 @@ func cmdInit(args []string) {
 	// In interactive mode, show a summary and let the user back out before
 	// anything is created or registered.
 	if opts.Interactive && !rt.ConfirmInitSummary(opts) {
-		fmt.Fprintln(os.Stderr, "已取消")
+		fmt.Fprintln(os.Stderr, "cancelled")
 		os.Exit(1)
 	}
 
@@ -392,11 +392,8 @@ func cmdResume(args []string) {
 	}
 }
 
-func cmdUninstall(args []string) {
-	fs := flag.NewFlagSet("uninstall", flag.ExitOnError)
-	purge := fs.Bool("purge", false, "Also deregister this device from the server (default: local cleanup only)")
-	fs.Parse(args)
-	if err := rt.RunUninstall(*purge); err != nil {
+func cmdUninstall() {
+	if err := rt.RunUninstall(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}

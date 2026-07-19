@@ -181,8 +181,8 @@ func RunInit(opts *InitOptions) error {
 		fmt.Println("✓ poller sessions created: main-poller, worker-poller")
 	}
 	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Println("  agentlink attach worker    # switch to worker session")
+	fmt.Println("Entering the main session (detach with Ctrl-b d).")
+	fmt.Println("Other session: agentlink attach worker")
 
 	return nil
 }
@@ -279,11 +279,11 @@ func launchSessions(baseDir, defaultAgent string, opts launchOpts) (map[string]s
 		// continuing (which would leave only the poller behind).
 		time.Sleep(1 * time.Second)
 		if !tmuxSessionAlive(session) {
-			fmt.Printf("  ✗ %s 启动失败,claude 已退出\n", session)
+			fmt.Printf("  ✗ %s failed to start (claude exited)\n", session)
 			if tail := tailFile(logPath, 12); tail != "" {
 				fmt.Printf("%s\n", indent(tail, "    "))
 			}
-			fmt.Printf("    完整日志: %s\n", logPath)
+			fmt.Printf("    full log: %s\n", logPath)
 			recorded[session] = ""
 			continue
 		}
@@ -417,7 +417,7 @@ func registerDeviceInteractive(opts *InitOptions, device string) (*registerRespo
 		}
 		if opts.Interactive && status == http.StatusUnauthorized && attempt < 2 {
 			fmt.Printf("  %v\n", err)
-			opts.Password = promptSecret("请重新输入注册密码")
+			opts.Password = promptSecret("re-enter register password")
 			continue
 		}
 		return nil, err

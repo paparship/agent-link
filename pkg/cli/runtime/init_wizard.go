@@ -28,7 +28,7 @@ func IsInteractive() bool {
 // and re-asked on failure rather than aborting the whole command. Only call
 // this when IsInteractive() is true.
 func PromptInitOptions(opts *InitOptions) error {
-	fmt.Println("交互式初始化 agentlink(直接回车采用 [] 中默认值)")
+	fmt.Println("Interactive agentlink setup (press Enter to accept the [default])")
 	fmt.Println()
 
 	// ① Server URL — validated by probing GET /health.
@@ -38,22 +38,22 @@ func PromptInitOptions(opts *InitOptions) error {
 		for attempt := 0; attempt < 3; attempt++ {
 			val := normalizeServer(promptLine("Server URL", def))
 			if val == "" {
-				fmt.Println("  server 不能为空")
+				fmt.Println("  server must not be empty")
 				continue
 			}
-			fmt.Printf("  正在探测 %s/health ...\n", val)
+			fmt.Printf("  probing %s/health ...\n", val)
 			if err := probeHealth(val); err != nil {
-				fmt.Printf("  连接失败: %v\n", err)
+				fmt.Printf("  connection failed: %v\n", err)
 				def = val
 				continue
 			}
-			fmt.Println("  ✓ 已连接")
+			fmt.Println("  ✓ connected")
 			opts.Server = val
 			ok = true
 			break
 		}
 		if !ok {
-			return fmt.Errorf("无法连接到 server(重试 3 次后放弃)")
+			return fmt.Errorf("could not connect to server (gave up after 3 tries)")
 		}
 	} else {
 		opts.Server = normalizeServer(opts.Server)
@@ -63,22 +63,22 @@ func PromptInitOptions(opts *InitOptions) error {
 	// (RunInit re-asks on a 401 when opts.Interactive is set).
 	if opts.Password == "" {
 		for attempt := 0; attempt < 3; attempt++ {
-			pw := promptSecret("注册密码")
+			pw := promptSecret("register password")
 			if pw != "" {
 				opts.Password = pw
 				break
 			}
-			fmt.Println("  密码不能为空")
+			fmt.Println("  password must not be empty")
 		}
 		if opts.Password == "" {
-			return fmt.Errorf("未输入密码(重试 3 次后放弃)")
+			return fmt.Errorf("no password entered (gave up after 3 tries)")
 		}
 	}
 
 	// ③ Device name — defaults to hostname.
 	if opts.Device == "" {
 		host, _ := os.Hostname()
-		opts.Device = promptLine("设备名", host)
+		opts.Device = promptLine("device name", host)
 		if opts.Device == "" {
 			opts.Device = host
 		}
@@ -90,18 +90,18 @@ func PromptInitOptions(opts *InitOptions) error {
 // ConfirmInitSummary prints the resolved settings and asks for a y/N
 // confirmation before anything is created. Returns true to proceed.
 func ConfirmInitSummary(opts *InitOptions) bool {
-	poll := "开启"
+	poll := "on"
 	if opts.NoPoll {
-		poll = "关闭"
+		poll = "off"
 	}
 	fmt.Println()
-	fmt.Println("即将初始化:")
+	fmt.Println("About to initialize:")
 	fmt.Printf("  Server : %s\n", opts.Server)
 	fmt.Printf("  Device : %s\n", opts.Device)
 	fmt.Printf("  Path   : %s\n", opts.Path)
 	fmt.Printf("  Poll   : %s\n", poll)
 	fmt.Println()
-	return promptConfirm("确认继续?")
+	return promptConfirm("Proceed?")
 }
 
 // normalizeServer trims whitespace, adds an http:// scheme when missing, and
@@ -174,19 +174,19 @@ func promptAgentChoice(session string, supported, avail []string) string {
 		}
 	}
 	for {
-		fmt.Printf("session %q 用哪个 agent?(创建后不可更改)\n", session)
+		fmt.Printf("Which agent for session %q? (permanent, cannot be changed later)\n", session)
 		for i, a := range supported {
-			mark := "未检测到"
+			mark := "not found"
 			if installed[a] {
-				mark = "已安装"
+				mark = "installed"
 			}
 			suffix := ""
 			if a == def {
-				suffix = "  (默认)"
+				suffix = "  (default)"
 			}
 			fmt.Printf("  %d. %-8s (%s)%s\n", i+1, a, mark, suffix)
 		}
-		choice := promptLine("选择(序号或名称)", def)
+		choice := promptLine("Choose (number or name)", def)
 		if n, err := strconv.Atoi(choice); err == nil && n >= 1 && n <= len(supported) {
 			return supported[n-1]
 		}
@@ -195,7 +195,7 @@ func promptAgentChoice(session string, supported, avail []string) string {
 				return a
 			}
 		}
-		fmt.Printf("  无效选择:%q\n", choice)
+		fmt.Printf("  invalid choice: %q\n", choice)
 	}
 }
 

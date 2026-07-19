@@ -70,14 +70,14 @@ func TestPoller_injectsWhenIdle(t *testing.T) {
 	}
 
 	p.Run()
-	expected := "[来自 dev-a:main 的消息] " + msgContent
+	expected := "[message from dev-a:main] " + msgContent
 	if injected != expected {
 		t.Errorf("expected injected=%q, got %q", expected, injected)
 	}
 }
 
 func TestPoller_injectsTaskWithGuidance(t *testing.T) {
-	taskContent := "查 prod 为什么 500"
+	taskContent := "check why prod returns 500"
 	taskID := "fix-001"
 
 	mockSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -119,7 +119,7 @@ func TestPoller_injectsTaskWithGuidance(t *testing.T) {
 	p.Run()
 
 	// Check prefix
-	if !strings.Contains(injected, "[来自 dev-a:main 的任务 fix-001]") {
+	if !strings.Contains(injected, "[task fix-001 from dev-a:main]") {
 		t.Errorf("injected missing task prefix, got: %s", injected)
 	}
 	// Check content preserved

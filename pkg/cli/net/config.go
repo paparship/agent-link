@@ -34,7 +34,7 @@ func LoadConfig() (*AgentConfig, error) {
 	path := filepath.Join(os.Getenv("HOME"), ".agentlink", "config.toml")
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("config file not found at %s", path)
+		return nil, fmt.Errorf("config file not found at %s; run 'agentlink init' first", path)
 	}
 
 	cfg := &AgentConfig{

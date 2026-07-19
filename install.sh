@@ -93,4 +93,5 @@ if [ "$TMUX_MISSING" -eq 1 ]; then
       ;;
   esac
 fi
-echo "  Run 'agentlink init --help' to get started"
+echo ""
+echo "Next: run 'agentlink init'"

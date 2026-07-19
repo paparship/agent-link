@@ -19,7 +19,7 @@ func displayRecipientStatus(status *recipientStatusJSON) {
 	if status.Device == "" && status.Session == "" {
 		return
 	}
-	fmt.Printf("\n%s %s session 当前状态: %s\n", status.Device, status.Session, status.Current)
+	fmt.Printf("\n%s %s session status: %s\n", status.Device, status.Session, status.Current)
 }
 
 func RunSend(target, content string, interrupt bool, title string) error {
@@ -55,7 +55,7 @@ func RunSend(target, content string, interrupt bool, title string) error {
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	fmt.Printf("✓ 消息已投递（ID: %s）\n", result.ID)
+	fmt.Printf("✓ message delivered (id: %s)\n", result.ID)
 	displayRecipientStatus(result.RecipientStatus)
 
 	return nil

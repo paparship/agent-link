@@ -163,12 +163,11 @@ func RunSessionRemove(name string) error {
 	return nil
 }
 
-// RunUninstall tears down the local install. By default it only cleans up
-// locally (kill tmux, remove work dir + ~/.agentlink + the binary) and never
-// depends on the server being reachable. With purge=true it also deregisters
-// the device from the server — but a server failure there is a warning, not a
-// reason to abort local cleanup (issue 38, per issue 18's original design).
-func RunUninstall(purge bool) error {
+// RunUninstall tears down the local install and deregisters this device from
+// the server. Server deregistration is best-effort: a down/unreachable server
+// downgrades to a warning and never blocks local cleanup, so uninstall always
+// leaves the machine clean (issue 40).
+func RunUninstall() error {
 	cfg, err := api.LoadConfig()
 	if err != nil {
 		return err
@@ -177,17 +176,15 @@ func RunUninstall(purge bool) error {
 	// Kill tmux sessions (best-effort)
 	killSessionSessions(cfg.BaseDir)
 
-	// Optionally deregister from the server. Do this before deleting
-	// ~/.agentlink (which holds the credentials). Failure is non-fatal so a
-	// down/unreachable server can never block local cleanup.
-	if purge {
-		if creds, cerr := api.LoadCredentials(); cerr != nil {
-			fmt.Fprintf(os.Stderr, "warning: no credentials, skipping server deregister: %v\n", cerr)
-		} else if resp, derr := api.APIDo(cfg, creds, "DELETE", "/agents/device", nil); derr != nil {
-			fmt.Fprintf(os.Stderr, "warning: server deregister failed (continuing local cleanup): %v\n", derr)
-		} else {
-			resp.Body.Close()
-		}
+	// Deregister from the server (best-effort). Do this before deleting
+	// ~/.agentlink (which holds the credentials). A failure here is a warning,
+	// not a reason to abort local cleanup.
+	if creds, cerr := api.LoadCredentials(); cerr != nil {
+		fmt.Fprintf(os.Stderr, "warning: no credentials, skipping server deregister: %v\n", cerr)
+	} else if resp, derr := api.APIDo(cfg, creds, "DELETE", "/agents/device", nil); derr != nil {
+		fmt.Fprintf(os.Stderr, "warning: server deregister failed (continuing local cleanup): %v\n", derr)
+	} else {
+		resp.Body.Close()
 	}
 
 	// Delete work directory
@@ -215,11 +212,7 @@ func RunUninstall(purge bool) error {
 		}
 	}
 
-	if purge {
-		fmt.Println("✓ Device deregistered and local files cleaned")
-	} else {
-		fmt.Println("✓ Local files cleaned (device left registered; use --purge to also deregister)")
-	}
+	fmt.Println("✓ Device deregistered and local files cleaned")
 	return nil
 }
 

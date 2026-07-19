@@ -87,12 +87,12 @@ func (p *Poller) Run() error {
 				if err == nil && !p.IdleDetector.IsBusy(pane) && p.IdleDetector.IsPromptEmpty(pane) {
 					injectContent := msg.Content
 					if msg.Type == "msg" {
-						prefix := fmt.Sprintf("[来自 %s:%s 的消息] ", msg.FromDevice, msg.FromSession)
+						prefix := fmt.Sprintf("[message from %s:%s] ", msg.FromDevice, msg.FromSession)
 						injectContent = prefix + msg.Content
 					} else if msg.Type == "task" {
 						injectContent = fmt.Sprintf(
-							"[来自 %s:%s 的任务 %s]\n%s\n完成后请执行: agentlink task result %s completed \"<结果>\"\n如需挂起: agentlink task result %s suspended \"<原因>\"",
-							msg.FromDevice, msg.FromSession, msg.TaskID,
+							"[task %s from %s:%s]\n%s\nWhen done: agentlink task result %s completed \"<result>\"\nTo suspend: agentlink task result %s suspended \"<reason>\"",
+							msg.TaskID, msg.FromDevice, msg.FromSession,
 							msg.Content,
 							msg.TaskID, msg.TaskID,
 						)
