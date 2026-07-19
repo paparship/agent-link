@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,7 +20,24 @@ var testRdb *redis.Client
 var ts *httptest.Server
 
 func TestMain(m *testing.M) {
-	rdb, err := redis.NewClient("localhost:6379")
+	// Tests run against a dedicated redis DB so they never touch production
+	// data on DB 0 (issue 39). Override with TEST_REDIS_ADDR / TEST_REDIS_DB.
+	addr := "localhost:6379"
+	if v := os.Getenv("TEST_REDIS_ADDR"); v != "" {
+		addr = v
+	}
+	db := 15
+	if v := os.Getenv("TEST_REDIS_DB"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			db = n
+		}
+	}
+	if db == 0 {
+		fmt.Println("refusing to run tests on redis DB 0 (production); set TEST_REDIS_DB to a non-zero DB")
+		os.Exit(1)
+	}
+
+	rdb, err := redis.NewClientDB(addr, db)
 	if err != nil {
 		fmt.Println("redis not available, skipping api tests")
 		os.Exit(0)
