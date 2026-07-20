@@ -222,10 +222,15 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if exists > 0 {
 		// Device already registered (register password already verified above):
-		// reuse the identity and rotate its API key, keeping the device. To
-		// fully reset a device, run `agentlink uninstall --purge` then init
-		// again — the server no longer wipes a device on a register flag, since
-		// the register password is a shared secret (issue 38).
+		// reuse the identity and rotate its API key, keeping the device. This
+		// branch is the recovery path — init guards against re-running over an
+		// existing base_dir, so a reuse means the device survived on the server
+		// while the local install was torn down. Reset "sessions" to this
+		// registration's set (not append) so a fresh init self-heals instead of
+		// resurrecting ghost sessions from a prior life (issue 42). To fully
+		// reset a device otherwise, run `agentlink uninstall` (best-effort
+		// deregister) then init again — the server never wipes a device on a
+		// register flag, since the register password is a shared secret (#38).
 		apiKey, apiKeyHash, err := generateAPIKey()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
@@ -237,7 +242,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			s.rdb.Del(r.Context(), "agentlink:api_key:"+oldHash)
 		}
 		now := time.Now().UTC().Format(time.RFC3339)
-		s.rdb.HSet(r.Context(), deviceKey, "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
+		sessionsJSON, _ := json.Marshal(req.Sessions)
+		s.rdb.HSet(r.Context(), deviceKey, "sessions", string(sessionsJSON), "api_key_hash", apiKeyHash, "registered_at", now, "last_seen", now)
 		s.rdb.Set(r.Context(), "agentlink:api_key:"+apiKeyHash, req.Device, 0)
 		writeJSON(w, http.StatusOK, RegisterResponse{
 			APIKey:       apiKey,
@@ -630,9 +636,16 @@ func (s *Server) deleteDeviceData(ctx context.Context, device string) {
 		s.rdb.Del(ctx, "agentlink:api_key:"+apiKeyHash)
 	}
 
-	inboxKeys, _ := s.rdb.Keys(ctx, "agentlink:inbox:"+device+":*").Result()
-	for _, k := range inboxKeys {
-		s.rdb.Del(ctx, k)
+	// Delete every per-device:session leftover. inbox holds queued messages;
+	// processing holds reserve-but-unacked messages (issue 37); current_msg is
+	// the session's status string; issued is the reverse index of tasks this
+	// device handed out. Missing any of these leaks state that a later
+	// re-register would resurrect as ghosts (issue 42).
+	for _, prefix := range []string{"inbox", "processing", "current_msg", "issued"} {
+		keys, _ := s.rdb.Keys(ctx, "agentlink:"+prefix+":"+device+":*").Result()
+		for _, k := range keys {
+			s.rdb.Del(ctx, k)
+		}
 	}
 
 	trackingKeys, _ := s.rdb.Keys(ctx, "agentlink:tasks:"+device+":*").Result()

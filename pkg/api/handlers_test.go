@@ -59,7 +59,7 @@ func TestMain(m *testing.M) {
 
 func cleanupTestData() {
 	ctx := context.Background()
-	for _, pattern := range []string{"agentlink:device:*", "agentlink:api_key:*", "agentlink:inbox:*", "agentlink:task:*", "agentlink:tasks:*"} {
+	for _, pattern := range []string{"agentlink:device:*", "agentlink:api_key:*", "agentlink:inbox:*", "agentlink:processing:*", "agentlink:current_msg:*", "agentlink:issued:*", "agentlink:task:*", "agentlink:tasks:*"} {
 		keys, _ := testRdb.Keys(ctx, pattern).Result()
 		if len(keys) > 0 {
 			testRdb.Del(ctx, keys...)
@@ -195,6 +195,14 @@ func TestRegister(t *testing.T) {
 		json.NewDecoder(resp.Body).Decode(&rr)
 		if rr.APIKey == "" {
 			t.Error("expected api_key in response")
+		}
+
+		// Reuse must RESET the stored sessions to this registration's set, not
+		// keep the prior ["main","worker"] — otherwise ghost sessions survive a
+		// reinstall (issue 42).
+		stored, _ := testRdb.HGet(context.Background(), "agentlink:device:reg-test", "sessions").Result()
+		if stored != `["main"]` {
+			t.Errorf("reuse should reset sessions to [\"main\"], got %s", stored)
 		}
 	})
 

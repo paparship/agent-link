@@ -173,8 +173,10 @@ func RunUninstall() error {
 		return err
 	}
 
-	// Kill tmux sessions (best-effort)
-	killSessionSessions(cfg.BaseDir)
+	// Kill tmux sessions (best-effort). Derived from the registered session
+	// list, not from base_dir's subdirectories — if base_dir was already
+	// removed, disk enumeration would kill nothing and leak tmux (issue 42).
+	killSessionSessions(cfg.Sessions)
 
 	// Deregister from the server (best-effort). Do this before deleting
 	// ~/.agentlink (which holds the credentials). A failure here is a warning,
@@ -218,19 +220,13 @@ func RunUninstall() error {
 
 // killSessionSessions kills tmux sessions for each subdirectory in baseDir.
 // Best-effort; errors are silently ignored.
-func killSessionSessions(baseDir string) {
-	if baseDir == "" {
-		return
-	}
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
+// killSessionSessions kills each registered session's tmux session and its
+// "-poller" companion. Names come from config's [sessions] (the source of
+// truth for what init launched), so cleanup works even when base_dir is gone.
+// "=name" forces an exact session-target match; that works on tmux 2.7 (only
+// PANE targets reject "=" there — see issue 41).
+func killSessionSessions(sessions map[string]string) {
+	for name := range sessions {
 		exec.Command("tmux", "kill-session", "-t", "="+name).Run()
 		exec.Command("tmux", "kill-session", "-t", "="+name+"-poller").Run()
 	}

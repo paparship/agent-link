@@ -581,6 +581,11 @@ func TestDeleteDevice(t *testing.T) {
 	testRdb.LPush(ctx, "agentlink:inbox:del-dev:worker", `{"id":"msg2"}`)
 	testRdb.HSet(ctx, "agentlink:task:t-del-dev", "status", "issued", "assigned_to", "del-dev:worker")
 	testRdb.SAdd(ctx, "agentlink:tasks:del-dev:worker", "t-del-dev")
+	// Per-device:session keys that were leaking before issue 42: processing
+	// (reserve-but-unacked), current_msg (status), issued (tasks handed out).
+	testRdb.LPush(ctx, "agentlink:processing:del-dev:worker", `{"id":"msg2"}`)
+	testRdb.Set(ctx, "agentlink:current_msg:del-dev:worker", "busy", 0)
+	testRdb.SAdd(ctx, "agentlink:issued:del-dev:main", "t-del-dev")
 
 	t.Run("delete device", func(t *testing.T) {
 		req, _ := http.NewRequest("DELETE", ts.URL+"/agents/device", nil)
@@ -620,6 +625,16 @@ func TestDeleteDevice(t *testing.T) {
 		exists, _ = testRdb.Exists(ctx, "agentlink:tasks:del-dev:worker").Result()
 		if exists != 0 {
 			t.Error("expected tracking set to be deleted")
+		}
+
+		// Verify the previously-leaking per-device:session keys are gone (#42)
+		exists, _ = testRdb.Exists(ctx,
+			"agentlink:processing:del-dev:worker",
+			"agentlink:current_msg:del-dev:worker",
+			"agentlink:issued:del-dev:main",
+		).Result()
+		if exists != 0 {
+			t.Errorf("expected processing/current_msg/issued to be deleted, %d still present", exists)
 		}
 	})
 
